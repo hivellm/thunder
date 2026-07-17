@@ -48,6 +48,14 @@ OPTIONS:
                              listener, same client) — isolates what the
                              server's features cost from what the wire costs.
                              Never a G5 lane.
+    --product-harness        BEN-040 product-level RPC-vs-HTTP harness against
+                             the demonstration engine: three scenarios (bulk
+                             ingest, small high-QPS call, pipelined polling),
+                             the same handler behind both transports, floors
+                             SEEDED from Nexus's table (never results). Writes
+                             <out>/<label>.json + .md (label default
+                             'product-harness-demo'). A real product swaps in
+                             its own engine in its own repo.
     --serve-resp3 <port>     BEN-003 calibration: serve the RESP3 lane on
                              0.0.0.0:<port> until killed, so an external
                              client (redis-benchmark) can drive the very same
@@ -70,6 +78,7 @@ struct Args {
     cfg: RunConfig,
     label: Option<String>,
     serve_resp3: Option<u16>,
+    product_harness: bool,
     diagnostic: bool,
     cores: usize,
     pin: bool,
@@ -86,6 +95,7 @@ impl Default for Args {
             cfg: RunConfig::default(),
             label: None,
             serve_resp3: None,
+            product_harness: false,
             diagnostic: false,
             cores: DEFAULT_PIN_CORES,
             pin: true,
@@ -111,6 +121,7 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Args, String> {
             "--noise-floor" => args.noise_floor_pct = need_float(&mut argv, "--noise-floor")?,
             "--allow-noisy" => args.allow_noisy = true,
             "--diagnostic" => args.diagnostic = true,
+            "--product-harness" => args.product_harness = true,
             "--serve-resp3" => {
                 args.serve_resp3 = Some(need_number(&mut argv, "--serve-resp3", 1)? as u16)
             }
@@ -167,6 +178,9 @@ fn main() -> ExitCode {
     }
     if let Some(port) = args.serve_resp3 {
         return serve_resp3(port);
+    }
+    if args.product_harness {
+        return run_product_harness(&args);
     }
     let selected = match scenarios::select(&args.scenario) {
         Ok(selected) => selected,
@@ -334,6 +348,62 @@ fn report_noise(outcome: &RunOutcome, args: &Args) -> ExitCode {
 /// comparable to this harness's own driver at matching `-P`/`-c`. Binding
 /// `0.0.0.0` (not loopback) is deliberate: the calibration client runs in a
 /// container and reaches the host from outside.
+/// Run the product-harness template (BEN-040) against the demonstration engine
+/// and commit the artifact. Numbers are provisional SEED comparisons, not a
+/// product verdict — a real product swaps [`DemoEngine`] for its own engine in
+/// its own repository (BEN-040's per-product half).
+fn run_product_harness(args: &Args) -> ExitCode {
+    use thunder_bench::product_harness::{render_json, render_markdown, run_artifact, DemoEngine};
+
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("error: failed to start the tokio runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let artifact = match runtime.block_on(run_artifact(Arc::new(DemoEngine::new()), &args.cfg)) {
+        Ok(artifact) => artifact,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let label = args.label.as_deref().unwrap_or("product-harness-demo");
+    let json = match render_json(&artifact) {
+        Ok(json) => json,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(e) = std::fs::create_dir_all(&args.out) {
+        eprintln!("error: cannot create {}: {e}", args.out.display());
+        return ExitCode::FAILURE;
+    }
+    let json_path = args.out.join(format!("{label}.json"));
+    let md_path = args.out.join(format!("{label}.md"));
+    if let Err(e) = std::fs::write(&json_path, json) {
+        eprintln!("error: cannot write {}: {e}", json_path.display());
+        return ExitCode::FAILURE;
+    }
+    if let Err(e) = std::fs::write(&md_path, render_markdown(&artifact)) {
+        eprintln!("error: cannot write {}: {e}", md_path.display());
+        return ExitCode::FAILURE;
+    }
+    println!("wrote {}", json_path.display());
+    println!("wrote {}", md_path.display());
+    println!(
+        "note: floors are SEEDS from Nexus's table, not results — a product recalibrates its own \
+         and must not cite these numbers while the shootout substrate is unsettled (BEN-040/031)."
+    );
+    ExitCode::SUCCESS
+}
+
 fn serve_resp3(port: u16) -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()

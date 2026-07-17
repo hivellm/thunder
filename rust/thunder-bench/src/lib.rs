@@ -52,6 +52,7 @@ pub mod bolt;
 pub mod driver;
 pub mod http;
 pub mod pinning;
+pub mod product_harness;
 pub mod resp3;
 pub mod scenarios;
 pub mod stats;

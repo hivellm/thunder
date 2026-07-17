@@ -40,7 +40,9 @@ use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::backend::NoopBackend;
+use crate::bolt::{spawn_bolt_listener, BoltHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
+use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
 use crate::stats::{compute, dispersion, CellStats, Dispersion};
 
@@ -62,11 +64,17 @@ pub const fn bench_profile() -> Profile {
     }
 }
 
-/// The two skeleton lanes. RESP3 and Bolt join at T4.2 (BEN-001).
+/// The four shootout lanes (BEN-001) — all served by the one no-op backend
+/// in the same process, host, runtime and allocator, so the transport is the
+/// only thing measured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lane {
     /// Thunder RPC via `thunder::client` against `thunder::server`.
     Thunder,
+    /// RESP3 (the Redis/Synap convention) against [`crate::resp3`].
+    Resp3,
+    /// Bolt v5 (the Neo4j/Nexus competitor) against [`crate::bolt`].
+    Bolt,
     /// Raw HTTP/1.1 + JSON against the hand-rolled listener.
     Http,
 }
@@ -76,12 +84,15 @@ impl Lane {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Thunder => "thunder",
+            Self::Resp3 => "resp3",
+            Self::Bolt => "bolt",
             Self::Http => "http",
         }
     }
 
-    /// Both skeleton lanes, artifact order.
-    pub const ALL: [Lane; 2] = [Lane::Thunder, Lane::Http];
+    /// Every lane, artifact order — Thunder first, then the peers it must
+    /// beat in every cell (BEN-020 / gate G5).
+    pub const ALL: [Lane; 4] = [Lane::Thunder, Lane::Resp3, Lane::Bolt, Lane::Http];
 }
 
 /// Run discipline knobs (BEN-011).
@@ -154,28 +165,35 @@ impl CellResult {
     }
 }
 
-/// The in-process shootout targets: both listeners over the one shared
+/// The in-process shootout targets: every listener over the one shared
 /// no-op backend (BEN-001 — same process, host, runtime, allocator).
 #[derive(Debug)]
 pub struct Targets {
     /// The Thunder RPC listener handle.
     pub thunder: ListenerHandle,
+    /// The RESP3 listener handle.
+    pub resp3: Resp3Handle,
+    /// The Bolt v5 listener handle.
+    pub bolt: BoltHandle,
     /// The HTTP/1.1 listener handle.
     pub http: HttpHandle,
 }
 
 impl Targets {
-    /// Graceful shutdown of both listeners.
+    /// Graceful shutdown of every listener.
     pub async fn stop(self) {
         self.thunder.stop().await;
+        self.resp3.stop().await;
+        self.bolt.stop().await;
         self.http.stop().await;
     }
 }
 
-/// Spawn both skeleton listeners on loopback ephemeral ports, sharing one
-/// [`NoopBackend`].
+/// Spawn every listener on loopback ephemeral ports, sharing one
+/// [`NoopBackend`] (BEN-001).
 pub async fn spawn_targets() -> io::Result<Targets> {
     let backend = Arc::new(NoopBackend::new());
+    let loopback = SocketAddr::from(([127, 0, 0, 1], 0));
     let thunder = spawn_listener(
         Arc::clone(&backend),
         bench_profile(),
@@ -186,8 +204,15 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         ListenerConfig::default(),
     )
     .await?;
-    let http = spawn_http_listener(backend, SocketAddr::from(([127, 0, 0, 1], 0))).await?;
-    Ok(Targets { thunder, http })
+    let resp3 = spawn_resp3_listener(Arc::clone(&backend), loopback).await?;
+    let bolt = spawn_bolt_listener(Arc::clone(&backend), loopback).await?;
+    let http = spawn_http_listener(backend, loopback).await?;
+    Ok(Targets {
+        thunder,
+        resp3,
+        bolt,
+        http,
+    })
 }
 
 /// Run one scenario on one lane across its matrix cells.
@@ -207,6 +232,8 @@ pub async fn run_scenario(
             let storms = connections.min(cfg.ops.max(1));
             let measured = match lane {
                 Lane::Thunder => thunder_storm(targets, storms, cfg).await?,
+                Lane::Resp3 => crate::resp3::storm(&targets.resp3, storms, cfg).await?,
+                Lane::Bolt => crate::bolt::storm(&targets.bolt, storms, cfg).await?,
                 Lane::Http => http_storm(targets, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
@@ -224,6 +251,8 @@ pub async fn run_scenario(
                 };
                 let measured = match lane {
                     Lane::Thunder => thunder_cell(targets, &spec, cfg).await?,
+                    Lane::Resp3 => crate::resp3::cell(&targets.resp3, &spec, cfg).await?,
+                    Lane::Bolt => crate::bolt::cell(&targets.bolt, &spec, cfg).await?,
                     Lane::Http => http_cell(targets, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
@@ -257,14 +286,20 @@ pub fn pending_cell(scenario: &Scenario) -> CellResult {
 // ── Internals ────────────────────────────────────────────────────────────────
 
 /// Repetition stats plus server-side per-op byte costs for one cell.
-type Measured = (Vec<CellStats>, f64, f64);
+/// What a lane's cell measurement returns: per-repetition stats, mean
+/// request bytes/op, mean response bytes/op (server-side counters).
+pub type Measured = (Vec<CellStats>, f64, f64);
 
 /// One cell's request shape and concurrency.
-struct CellSpec {
-    command: &'static str,
-    args: Vec<Value>,
-    depth: usize,
-    connections: usize,
+pub struct CellSpec {
+    /// Backend command this cell issues (`ECHO` / `STATIC` / `SINK`).
+    pub command: &'static str,
+    /// Arguments carried with it.
+    pub args: Vec<Value>,
+    /// In-flight window per connection.
+    pub depth: usize,
+    /// Concurrent connections.
+    pub connections: usize,
 }
 
 /// The wire request each workload issues.

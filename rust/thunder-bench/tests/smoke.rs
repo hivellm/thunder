@@ -17,7 +17,7 @@ fn tiny() -> RunConfig {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn echo_scenario_runs_on_both_lanes() {
+async fn echo_scenario_runs_on_every_lane() {
     let targets = spawn_targets().await.unwrap();
     let scenario = scenarios::find("point-echo-64B").unwrap();
     let cfg = tiny();
@@ -53,15 +53,24 @@ async fn echo_scenario_runs_on_both_lanes() {
         Environment::capture(),
         &cfg,
         &selected,
-        vec!["thunder".to_owned(), "http".to_owned()],
+        Lane::ALL.iter().map(|l| l.as_str().to_owned()).collect(),
         all,
     );
     let json = render_json(&artifact).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(parsed["cells"].as_array().unwrap().len(), 8);
+    assert_eq!(
+        parsed["cells"].as_array().unwrap().len(),
+        4 * Lane::ALL.len(),
+        "every lane reports all four point-echo cells"
+    );
     let md = render_markdown(&artifact);
-    assert!(md.contains("| point-echo-64B | thunder |"));
-    assert!(md.contains("| point-echo-64B | http |"));
+    for lane in Lane::ALL {
+        assert!(
+            md.contains(&format!("| point-echo-64B | {} |", lane.as_str())),
+            "markdown must carry the {} lane",
+            lane.as_str()
+        );
+    }
 
     targets.stop().await;
 }
@@ -81,7 +90,7 @@ async fn pending_scenarios_report_without_measuring() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn connection_storm_runs_tiny_on_both_lanes() {
+async fn connection_storm_runs_tiny_on_every_lane() {
     let targets = spawn_targets().await.unwrap();
     let scenario = scenarios::find("connection-storm").unwrap();
     let cfg = RunConfig {

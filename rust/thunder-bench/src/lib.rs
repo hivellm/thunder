@@ -13,18 +13,28 @@
 //!   no inter-batch gaps (the Synap `-P 16` lesson, BEN-003), warmup
 //!   discarded, N repetitions with dispersion reported (BEN-011).
 //!
-//! # Skeleton scope
+//! # Lanes
 //!
-//! The skeleton hosts **two** of the four BEN-001 lanes:
+//! All four BEN-001 lanes are live, every one served by the same no-op
+//! backend in the same process:
 //!
 //! | Lane | Listener |
 //! |---|---|
 //! | `thunder` | [`thunder::server::spawn_listener`] over the no-op backend |
+//! | `resp3` | RESP3 peer ([`resp3`]) — the Redis/Synap convention |
+//! | `bolt` | minimal Bolt v5 peer ([`bolt`]) — the Neo4j competitor |
 //! | `http` | hand-rolled minimal HTTP/1.1 + JSON ([`http`]) over the same backend |
 //!
-//! RESP3 and Bolt lanes land at T4.2, together with the full connection
-//! sweep {1, 4, 16, 64} and the bulk-10k / embedding-768 scenarios
-//! (declared as data today, marked pending — [`scenarios`]).
+//! Each peer implements exactly the subset the BEN-010 matrix needs and
+//! documents that scope in its module docs — a benchmark peer, not a
+//! product (BEN-002).
+//!
+//! **The RESP3 lane's `redis-benchmark` calibration (BEN-003) is UNRUN**:
+//! its numbers must not be trusted at G5 until it is run — see [`resp3`].
+//!
+//! Still pending: the full connection sweep {1, 4, 16, 64} and the
+//! bulk-10k / embedding-768 scenarios (declared as data, marked pending —
+//! [`scenarios`]).
 //!
 //! Results are written as committed artifacts under `bench-out/` — JSON +
 //! markdown summary with a machine/environment header (BEN-030,
@@ -38,8 +48,10 @@
 
 pub mod artifact;
 pub mod backend;
+pub mod bolt;
 pub mod driver;
 pub mod http;
+pub mod resp3;
 pub mod scenarios;
 pub mod stats;
 

@@ -51,6 +51,8 @@ Canonical spec: `docs/spec/` (transplanted from `Nexus/docs/specs/rpc-wire-forma
 
 ## 🏗 Architecture
 
+Thunder is a **best-of-family composite**: the server hot path comes from Synap (the only one with measured transport throughput), the client architecture from Vectorizer (the only true multiplexer), the spec and operational features from Nexus — plus upgrades none of the three has (bin `Bytes` −33% on embeddings, caps in every language, typed error-code parsing). The full donor map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 Every HiveLLM server is Rust, so Thunder is **one full stack + three client-only ports**:
 
 | Layer | Rust | TypeScript / Python / C# | Contents |
@@ -139,12 +141,17 @@ Thunder finishes the job with a **transport-isolated shootout**: Thunder RPC vs 
 | **P4** | Uniform quality floor + transport shootout vs Bolt / RESP3 / HTTP | G4 · **G5** | — |
 | **P5** | Go port, push/streaming v-next, PHP/Java on demand | — | — |
 
-Full plan with per-product migration tables and risk register: [§4](docs/analysis/04-adoption-plan.md).
+Full milestones: [docs/ROADMAP.md](docs/ROADMAP.md) · task graph: [docs/DAG.md](docs/DAG.md) · per-product migration and risks: [§4 of the analysis](docs/analysis/04-adoption-plan.md).
 
 ## 📚 Documentation
 
 | Document | Contents |
 |---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The best-of-family composite — which donor contributes what, the best-of matrix, performance budget |
+| [docs/PRD.md](docs/PRD.md) | Product requirements — FR/NFR catalog, release criteria |
+| [docs/DAG.md](docs/DAG.md) | Implementation DAG — tasks T0.1–T5.3, gates G0–G5, critical path |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones M0–M5, timeline, releases 0.1.0 → 1.0.0 |
+| [docs/specs/README.md](docs/specs/README.md) | Normative specs SPEC-001..007 (wire binding, profiles, client, server, conformance, packaging, benchmarks) |
 | [docs/analysis/README.md](docs/analysis/README.md) | Feasibility analysis — executive summary, verdict, findings T-001..T-026 |
 | [docs/analysis/01-current-state.md](docs/analysis/01-current-state.md) | The 18-implementation inventory, duplication/feature matrices, drift catalog, security gaps |
 | [docs/analysis/02-module-design.md](docs/analysis/02-module-design.md) | Layered architecture, profile concept, per-language design and packaging |

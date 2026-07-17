@@ -16,8 +16,9 @@
 | §4 | [04-adoption-plan.md](04-adoption-plan.md) | Phased migration per product, effort estimates, risk register (T-018..T-020) |
 | §5 | [05-protocol-crate-dissolution.md](05-protocol-crate-dissolution.md) | Eliminating the per-product `-protocol` crates and their forced publishing choreography (T-021..T-024) |
 | §6 | [06-benchmark-mandate.md](06-benchmark-mandate.md) | Transport shootout Thunder vs Bolt vs RESP3 vs HTTP; the always-win release gate G5 (T-025..T-026) |
+| §7 | [07-performance-baseline.md](07-performance-baseline.md) | Which of the three implementations is fastest — hot-path comparison, rmp-serde probe, the composite baseline (T-027..T-030) |
 
-Findings are numbered **T-001..T-026** globally.
+Findings are numbered **T-001..T-030** globally.
 
 ## Executive summary
 
@@ -37,7 +38,7 @@ Findings are numbered **T-001..T-026** globally.
 |---|---|---|
 | T-001 | Case for the module | 18 copies of one ~600-LOC protocol, ≈17.5k LOC total; 12 copies in the four target languages alone |
 | T-004 | Security | 9 of 15 SDK transports allocate from the untrusted length prefix with no cap; Nexus C# deserializes wire data with `MessagePackSerializer.Typeless` |
-| T-005 | Interop risk | Wire drift exists **today**: Synap encodes `Bytes` as a MessagePack int-array (not bin — forfeits the 4× embedding-payload win), and Python/Go/Java Synap SDKs send requests as maps while others send arrays |
+| T-005 | Interop risk | Wire drift exists **today**: every Rust implementation emits `Bytes` as an int-array (~50% bigger than bin on embeddings — §7 probe), some non-Rust SDKs emit bin, and Python/Go/Java Synap SDKs send requests as maps while others send arrays |
 | T-003 | Quality inconsistency | Feature matrix is scattershot: demux, reconnect, timeouts, caps and push support differ per product × language with no pattern |
 | T-009 | Design | All family servers are Rust → the module is 1 full stack (Rust: wire+client+server) + 3 client-only ports (TS/Py/C#) — much smaller than it sounds |
 | T-010 | Design | The six known divergence dimensions (naming, handshake, push, caps, error prefix, TLS) become a declarative `Profile`, so one module serves Synap-, Nexus- and Vectorizer-shaped servers |
@@ -47,6 +48,8 @@ Findings are numbered **T-001..T-026** globally.
 | T-022 | Release fix | Thunder inverts the dependency: one release train replaces three protocol-then-SDK choreographies; no product publishes a protocol package again |
 | T-025 | Performance | Committed evidence upgraded: Synap's artifact shows SynapRPC ~3× RESP3/Redis per-op, transport-isolated; Nexus beats Neo4j-over-Bolt end-to-end |
 | T-026 | Performance gate | G5: Thunder must win every cell of the Bolt/RESP3/HTTP shootout matrix before any quantitative claim ships |
+| T-027 | Baseline choice | Synap's listener is the most performance-engineered server (BufWriter coalescing +23%, nodelay, zero-copy replies); Nexus's pays 2 extra serializations per op |
+| T-029 | Baseline choice | Probe-verified: all three Rust implementations emit int-array `Bytes`; Thunder's canonical bin is ~33% smaller on embeddings and decodes on every deployed server |
 
 ### Performance positioning (§6)
 

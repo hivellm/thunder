@@ -15,7 +15,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::wire::profile::{ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy};
+use crate::wire::config::{Config, ErrorConvention, Handshake, HelloStyle, PushPolicy};
 use crate::wire::{encode_frame, read_request_with_limit, Request, Response, Value, PUSH_ID};
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -40,9 +40,9 @@ const WRITER_QUEUE_DEPTH: usize = 64;
 /// Server identity used by Thunder-built HELLO replies (SRV-014).
 #[derive(Debug, Clone)]
 pub struct ServerInfo {
-    /// `server` field of the Nexus-shape reply (e.g. `"nexus"`).
+    /// `server` field of the metadata-shape HELLO reply (`HelloStyle::ArgLess`).
     pub name: String,
-    /// `version` field of the Nexus-shape reply.
+    /// `version` field of the metadata-shape HELLO reply.
     pub version: String,
 }
 
@@ -107,7 +107,7 @@ impl Default for ListenerConfig {
 /// Everything a connection task needs, shared once per listener.
 struct ConnShared<D> {
     dispatch: Arc<D>,
-    profile: Profile,
+    profile: Config,
     info: ServerInfo,
     idle_timeout: Duration,
     slow_threshold: Duration,
@@ -163,7 +163,7 @@ impl Drop for ListenerHandle {
 /// graceful shutdown through the returned handle (SRV-001).
 pub async fn spawn_listener<D: Dispatch>(
     dispatch: Arc<D>,
-    profile: Profile,
+    profile: Config,
     info: ServerInfo,
     config: ListenerConfig,
 ) -> io::Result<ListenerHandle> {
@@ -333,7 +333,7 @@ async fn handle_connection<D: Dispatch>(
                 }
                 continue;
             }
-            // Nexus semantics: acknowledge, then close after the write.
+            // AuthCommand semantics: acknowledge, then close after the write.
             "QUIT" if matches!(ctx.profile.handshake, Handshake::AuthCommand) => {
                 let response = Response::ok(req.id, Value::Str("OK".to_owned()));
                 let _ = send_inline(&tx, response, in_bytes).await;
@@ -533,8 +533,8 @@ async fn handle_hello<D: Dispatch>(
         HelloStyle::NotUsed => {
             Response::err(req_id, format_err("HELLO is not part of this profile"))
         }
-        // Nexus shape: arg-less request, metadata-only reply — credentials
-        // travel via AUTH.
+        // Metadata shape: arg-less request, metadata-only reply —
+        // credentials travel via AUTH.
         HelloStyle::ArgLess => Response::ok(
             req_id,
             Value::Map(vec![
@@ -557,7 +557,7 @@ async fn handle_hello<D: Dispatch>(
                 ),
             ]),
         ),
-        // Vectorizer/Lexum shape: credentials ride in the map (SRV-012).
+        // Capabilities shape: credentials ride in the map (SRV-012).
         HelloStyle::MapPayload => {
             let creds = match parse_hello_credentials(args) {
                 Ok(creds) => creds,
@@ -665,11 +665,11 @@ fn value_str(value: &Value) -> Option<String> {
     }
 }
 
-// ── Profile-convention error strings (SRV-021, PRO-014) ─────────────────────
+// ── Config-convention error strings (SRV-021, PRO-014) ─────────────────────
 
 /// Map an [`AuthError`] to the profile's convention; product-supplied
 /// messages travel verbatim (WIRE-040).
-fn auth_error_string(profile: &Profile, err: AuthError) -> String {
+fn auth_error_string(profile: &Config, err: AuthError) -> String {
     match err {
         AuthError::Message(message) => message,
         AuthError::InvalidCredentials => match profile.error_codes {
@@ -682,7 +682,7 @@ fn auth_error_string(profile: &Profile, err: AuthError) -> String {
 }
 
 /// The gate error for `HelloMandatory` profiles (SRV-011).
-fn hello_required_error(profile: &Profile) -> String {
+fn hello_required_error(profile: &Config) -> String {
     match profile.error_codes {
         ErrorConvention::BracketCode | ErrorConvention::Both => {
             format_bracket_code("unauthorized", "authentication required: send HELLO first")
@@ -692,7 +692,7 @@ fn hello_required_error(profile: &Profile) -> String {
 }
 
 /// The dedicated PUSH_ID refusal (SRV-013, WIRE-005).
-fn push_refusal_error(profile: &Profile) -> String {
+fn push_refusal_error(profile: &Config) -> String {
     const MESSAGE: &str = "request id u32::MAX is reserved for server push frames";
     match profile.error_codes {
         ErrorConvention::BracketCode | ErrorConvention::Both => {

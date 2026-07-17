@@ -30,9 +30,7 @@ use std::time::{Duration, Instant};
 
 use thunder::client::Client;
 use thunder::server::{spawn_listener, ListenerConfig, ListenerHandle, ServerInfo};
-use thunder::wire::profile::{
-    ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy, TlsPolicy,
-};
+use thunder::wire::config::{Config, ErrorConvention, Handshake, HelloStyle};
 use thunder::wire::Value;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -46,22 +44,23 @@ use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
 use crate::stats::{compute, dispersion, CellStats, Dispersion};
 
-/// The profile both bench peers run: no handshake (nothing but transport
-/// in the measurement), push reserved, in-flight bound sized above the
+/// The config this application (the bench harness) defines for itself —
+/// the worked example of Thunder's model: start from the standard, override
+/// only what this application actually needs, in this application's own
+/// repository.
+///
+/// It overrides the handshake away because the shootout must measure
+/// transport and nothing else (BEN-001): a handshake would put frames in
+/// the measurement that no other lane sends. In-flight is sized above the
 /// deepest matrix window (pipelined-1k).
-pub const fn bench_profile() -> Profile {
-    Profile {
-        name: "thunder-bench",
-        scheme: "thunder-bench",
-        default_port: 0,
-        handshake: Handshake::None,
-        hello_style: HelloStyle::NotUsed,
-        push: PushPolicy::Reserved,
-        max_frame_bytes: thunder::wire::DEFAULT_MAX_FRAME_BYTES,
-        max_in_flight: 4096,
-        error_codes: ErrorConvention::None,
-        tls: TlsPolicy::Off,
-    }
+pub const fn bench_profile() -> Config {
+    Config::standard()
+        .scheme("thunder-bench")
+        .port(0)
+        .handshake(Handshake::None)
+        .hello_style(HelloStyle::NotUsed)
+        .max_in_flight(4096)
+        .error_codes(ErrorConvention::None)
 }
 
 /// The four shootout lanes (BEN-001) — all served by the one no-op backend

@@ -1,7 +1,7 @@
 //! Thunder RPC server — the one listener every family server derives from.
 //!
 //! Products integrate by implementing [`Dispatch`] (SRV-020) and calling
-//! [`spawn_listener`] with their [`Profile`](crate::wire::Profile);
+//! [`spawn_listener`] with their [`Config`](crate::wire::Config);
 //! everything else is Thunder's:
 //!
 //! - lifecycle — accept loop, per-connection writer task, graceful drain,

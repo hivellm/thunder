@@ -37,9 +37,9 @@ use tokio::net::TcpStream;
 use tokio::sync::{oneshot, Mutex as TokioMutex, Semaphore};
 use tokio::task::JoinHandle;
 
-use crate::wire::profile::{Handshake, HelloStyle, PushPolicy};
+use crate::wire::config::{Handshake, HelloStyle, PushPolicy};
 use crate::wire::{
-    read_response_with_limit, write_request, Profile, Request, Response, Value, PUSH_ID,
+    read_response_with_limit, write_request, Config, Request, Response, Value, PUSH_ID,
 };
 
 use crate::client::endpoint::{parse_endpoint, Endpoint};
@@ -242,7 +242,7 @@ impl DispatchError {
 /// Cheap to share behind an `Arc`; every method takes `&self` and calls
 /// may run concurrently (CLT-010).
 pub struct Client {
-    profile: Profile,
+    profile: Config,
     config: ClientConfig,
     endpoint: Endpoint,
     /// Monotonic id allocator, skipping `PUSH_ID` (CLT-010).
@@ -267,17 +267,17 @@ impl Client {
     ///
     /// `endpoint` accepts every form of [`parse_endpoint`] (CLT-070):
     /// `scheme://host[:port]` or bare `host:port`.
-    pub async fn connect(endpoint: &str, profile: Profile) -> Result<Self, ClientError> {
+    pub async fn connect(endpoint: &str, profile: Config) -> Result<Self, ClientError> {
         Self::connect_with(endpoint, profile, ClientConfig::default()).await
     }
 
     /// Connect with explicit configuration.
     pub async fn connect_with(
         endpoint: &str,
-        profile: Profile,
+        profile: Config,
         config: ClientConfig,
     ) -> Result<Self, ClientError> {
-        let endpoint = parse_endpoint(endpoint)?;
+        let endpoint = parse_endpoint(endpoint, &profile)?;
         let client = Self {
             next_id: AtomicU32::new(1),
             in_flight: Semaphore::new(profile.max_in_flight),
@@ -385,7 +385,7 @@ impl Client {
     }
 
     /// The profile this client drives its behavior from.
-    pub fn profile(&self) -> &Profile {
+    pub fn profile(&self) -> &Config {
         &self.profile
     }
 
@@ -672,7 +672,7 @@ impl Client {
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Client")
-            .field("profile", &self.profile.name)
+            .field("scheme", &self.profile.scheme)
             .field("endpoint", &self.endpoint)
             .field("closed", &self.closed.load(Ordering::Relaxed))
             .finish_non_exhaustive()

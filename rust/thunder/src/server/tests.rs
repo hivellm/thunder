@@ -4,9 +4,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::wire::profile::{
-    ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy, TlsPolicy,
-};
+use crate::wire::config::{Config, ErrorConvention, Handshake, HelloStyle, PushPolicy, TlsPolicy};
 use crate::wire::{encode_frame, read_response, Request, Response, Value, PUSH_ID};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -90,7 +88,7 @@ fn config() -> ListenerConfig {
     ListenerConfig::default()
 }
 
-async fn start(profile: Profile) -> (ListenerHandle, Arc<EchoDispatch>) {
+async fn start(profile: Config) -> (ListenerHandle, Arc<EchoDispatch>) {
     start_with(profile, config()).await
 }
 
@@ -98,12 +96,12 @@ async fn start(profile: Profile) -> (ListenerHandle, Arc<EchoDispatch>) {
 /// `auth_required = false` (Synap's `require_auth` / Nexus's `auth_required`
 /// turned off). The handshake *shape* still comes from the profile; only
 /// enforcement is off (SRV-011).
-async fn start_open(profile: Profile) -> (ListenerHandle, Arc<EchoDispatch>) {
+async fn start_open(profile: Config) -> (ListenerHandle, Arc<EchoDispatch>) {
     start_with(profile, config().open()).await
 }
 
 async fn start_with(
-    profile: Profile,
+    profile: Config,
     config: ListenerConfig,
 ) -> (ListenerHandle, Arc<EchoDispatch>) {
     let dispatch = Arc::new(EchoDispatch::default());
@@ -139,10 +137,42 @@ async fn call(stream: &mut TcpStream, id: u32, command: &str, args: Vec<Value>) 
     recv(stream).await
 }
 
-/// A custom profile (PRO-020) with a tiny frame cap for WIRE-020 tests.
-fn tiny_profile() -> Profile {
-    Profile {
-        name: "tiny",
+/// A config with the `AuthCommand` shape and no HELLO — and a
+/// push-producing command. Named for the SHAPE it exercises: Thunder ships
+/// no product configs, so tests bring their own, exactly like an
+/// application does.
+fn auth_command_config() -> Config {
+    Config::standard()
+        .scheme("authcmd")
+        .port(0)
+        .handshake(Handshake::AuthCommand)
+        .hello_style(HelloStyle::NotUsed)
+        .push(PushPolicy::Enabled)
+        .error_codes(ErrorConvention::Resp3Prefixes)
+}
+
+/// A config with the `AuthCommand` shape plus an optional arg-less HELLO.
+fn argless_hello_config() -> Config {
+    Config::standard()
+        .scheme("argless")
+        .port(0)
+        .handshake(Handshake::AuthCommand)
+        .hello_style(HelloStyle::ArgLess)
+        .error_codes(ErrorConvention::Resp3Prefixes)
+}
+
+/// A config with the standard `HelloMandatory` + map-payload shape and
+/// bracket-code errors.
+fn hello_mandatory_config() -> Config {
+    Config::standard()
+        .scheme("hellomap")
+        .port(0)
+        .error_codes(ErrorConvention::BracketCode)
+}
+
+/// A custom config (PRO-020) with a tiny frame cap for WIRE-020 tests.
+fn tiny_profile() -> Config {
+    Config {
         scheme: "tiny",
         default_port: 0,
         handshake: Handshake::None,
@@ -155,12 +185,11 @@ fn tiny_profile() -> Profile {
     }
 }
 
-/// A custom profile (PRO-020) with no handshake at all — the `Handshake::None`
+/// A custom config (PRO-020) with no handshake at all — the `Handshake::None`
 /// variant no registered family profile uses (BN-023: Synap, once thought to be
 /// this, authenticates via `AUTH`).
-fn no_handshake_profile() -> Profile {
-    Profile {
-        name: "open",
+fn no_handshake_profile() -> Config {
+    Config {
         scheme: "open",
         default_port: 0,
         handshake: Handshake::None,
@@ -177,7 +206,7 @@ fn no_handshake_profile() -> Profile {
 
 #[tokio::test]
 async fn ping_round_trips_pre_auth() {
-    let (handle, _dispatch) = start(Profile::nexus()).await;
+    let (handle, _dispatch) = start(argless_hello_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "PING", vec![]).await;
     assert_eq!(response.id, 1);
@@ -191,7 +220,7 @@ async fn ping_round_trips_pre_auth() {
 
 #[tokio::test]
 async fn five_way_multiplexing_completes_out_of_order() {
-    let (handle, _dispatch) = start_open(Profile::synap()).await;
+    let (handle, _dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     // ids 1..=5 sleep 400,300,200,100,0 ms — completion reverses the
     // request order (SRV-002/003).
@@ -218,7 +247,7 @@ async fn five_way_multiplexing_completes_out_of_order() {
 
 #[tokio::test]
 async fn push_id_client_frame_is_refused_and_connection_stays_usable() {
-    let (handle, _dispatch) = start_open(Profile::synap()).await;
+    let (handle, _dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, PUSH_ID, "ECHO", vec![Value::Int(1)]).await;
     assert_eq!(response.id, PUSH_ID);
@@ -236,7 +265,7 @@ async fn push_id_client_frame_is_refused_and_connection_stays_usable() {
 
 #[tokio::test]
 async fn unknown_command_error_leaves_connection_usable() {
-    let (handle, _dispatch) = start_open(Profile::synap()).await;
+    let (handle, _dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "NOPE", vec![]).await;
     assert_eq!(
@@ -257,7 +286,7 @@ async fn unknown_command_error_leaves_connection_usable() {
 
 #[tokio::test]
 async fn auth_command_profile_gates_until_auth_succeeds() {
-    let (handle, _dispatch) = start(Profile::nexus()).await;
+    let (handle, _dispatch) = start(argless_hello_config()).await;
     let mut client = connect(&handle).await;
     // Non-allowlisted command pre-auth → NOAUTH (SRV-011).
     let response = call(&mut client, 1, "ECHO", vec![Value::Int(1)]).await;
@@ -293,7 +322,7 @@ async fn auth_command_profile_gates_until_auth_succeeds() {
 
 #[tokio::test]
 async fn hello_reply_matches_nexus_shape() {
-    let (handle, _dispatch) = start(Profile::nexus()).await;
+    let (handle, _dispatch) = start(argless_hello_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "HELLO", vec![Value::Int(1)]).await;
     let value = response.result.unwrap();
@@ -319,7 +348,7 @@ async fn hello_reply_matches_nexus_shape() {
 
 #[tokio::test]
 async fn hello_mandatory_rejects_non_hello_first_frame_and_closes() {
-    let (handle, _dispatch) = start(Profile::vectorizer()).await;
+    let (handle, _dispatch) = start(hello_mandatory_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "PING", vec![]).await;
     assert!(
@@ -332,7 +361,7 @@ async fn hello_mandatory_rejects_non_hello_first_frame_and_closes() {
 
 #[tokio::test]
 async fn hello_mandatory_handshake_grants_access_and_reports_capabilities() {
-    let (handle, _dispatch) = start(Profile::vectorizer()).await;
+    let (handle, _dispatch) = start(hello_mandatory_config()).await;
     let mut client = connect(&handle).await;
     let hello_arg = Value::Map(vec![
         (Value::Str("version".into()), Value::Int(1)),
@@ -358,7 +387,7 @@ async fn hello_mandatory_handshake_grants_access_and_reports_capabilities() {
 
 #[tokio::test]
 async fn hello_mandatory_bad_credentials_error_allows_retry() {
-    let (handle, _dispatch) = start(Profile::vectorizer()).await;
+    let (handle, _dispatch) = start(hello_mandatory_config()).await;
     let mut client = connect(&handle).await;
     let bad = Value::Map(vec![(
         Value::Str("token".into()),
@@ -393,7 +422,7 @@ async fn hello_mandatory_bad_credentials_error_allows_retry() {
 /// errata this profile was `Handshake::None` and could not authenticate at all.
 #[tokio::test]
 async fn synap_profile_gates_until_auth_when_the_deployment_requires_it() {
-    let (handle, _dispatch) = start(Profile::synap()).await;
+    let (handle, _dispatch) = start(auth_command_config()).await;
     let mut client = connect(&handle).await;
     // Pre-auth: gated.
     let response = call(&mut client, 1, "ECHO", vec![Value::Int(1)]).await;
@@ -419,7 +448,7 @@ async fn synap_profile_gates_until_auth_when_the_deployment_requires_it() {
 /// deployment's — conflating them is the bug BN-023 fixed.
 #[tokio::test]
 async fn auth_command_profile_serves_uncredentialed_sessions_when_open() {
-    let (handle, _dispatch) = start_open(Profile::synap()).await;
+    let (handle, _dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "ECHO", vec![Value::Int(7)]).await;
     assert_eq!(
@@ -433,7 +462,7 @@ async fn auth_command_profile_serves_uncredentialed_sessions_when_open() {
 /// removes the *requirement*, it does not make `AUTH` succeed unconditionally.
 #[tokio::test]
 async fn open_deployment_still_rejects_bad_credentials() {
-    let (handle, _dispatch) = start_open(Profile::synap()).await;
+    let (handle, _dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "AUTH", vec![Value::Str("nope".into())]).await;
     assert_eq!(response.result, Err(WRONGPASS.to_owned()));
@@ -472,7 +501,7 @@ async fn oversized_frame_closes_the_connection_without_killing_the_listener() {
 
 #[tokio::test]
 async fn malformed_body_closes_only_that_connection() {
-    let (handle, _dispatch) = start_open(Profile::synap()).await;
+    let (handle, _dispatch) = start_open(auth_command_config()).await;
     let mut bad = connect(&handle).await;
     let mut good = connect(&handle).await;
     // Well-formed prefix, garbage MessagePack body (0xc1 is never valid).
@@ -491,7 +520,7 @@ async fn malformed_body_closes_only_that_connection() {
 
 #[tokio::test]
 async fn push_frames_flow_under_the_synap_profile() {
-    let (handle, dispatch) = start_open(Profile::synap()).await;
+    let (handle, dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "SUBSCRIBE", vec![]).await;
     assert_eq!(response.result, Ok(Value::Str("OK".to_owned())));
@@ -513,7 +542,7 @@ async fn push_frames_flow_under_the_synap_profile() {
 
 #[tokio::test]
 async fn push_reserved_profile_exposes_no_push_sender() {
-    let (handle, _dispatch) = start(Profile::nexus()).await;
+    let (handle, _dispatch) = start(argless_hello_config()).await;
     let mut client = connect(&handle).await;
     call(&mut client, 1, "AUTH", vec![Value::Str("key-1".into())]).await;
     let response = call(&mut client, 2, "SUBSCRIBE", vec![]).await;
@@ -530,7 +559,7 @@ async fn push_reserved_profile_exposes_no_push_sender() {
 async fn metrics_snapshot_counts_after_successful_writes() {
     let mut cfg = config();
     cfg.slow_threshold = Duration::from_millis(5);
-    let (handle, _dispatch) = start_with(Profile::synap(), cfg.open()).await;
+    let (handle, _dispatch) = start_with(auth_command_config(), cfg.open()).await;
     let mut client = connect(&handle).await;
 
     let request_frame_len = send(&mut client, 1, "ECHO", vec![Value::Str("hi".into())]).await;
@@ -564,7 +593,7 @@ async fn metrics_snapshot_counts_after_successful_writes() {
 async fn idle_timeout_closes_a_silent_connection() {
     let mut cfg = config();
     cfg.idle_timeout = Duration::from_millis(100);
-    let (handle, _dispatch) = start_with(Profile::synap(), cfg.open()).await;
+    let (handle, _dispatch) = start_with(auth_command_config(), cfg.open()).await;
     let mut client = connect(&handle).await;
     // A request inside the window works…
     let response = call(&mut client, 1, "ECHO", vec![Value::Int(1)]).await;
@@ -581,7 +610,7 @@ async fn idle_timeout_closes_a_silent_connection() {
 
 #[tokio::test]
 async fn stop_drains_in_flight_requests_before_closing() {
-    let (handle, _dispatch) = start_open(Profile::synap()).await;
+    let (handle, _dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     send(&mut client, 1, "SLEEP", vec![Value::Int(150)]).await;
     // Let the server read the frame before the shutdown signal lands.

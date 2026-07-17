@@ -63,7 +63,7 @@ impl Session {
         }
     }
 
-    /// Listener-scoped connection id, surfaced in the Nexus-shape HELLO
+    /// Listener-scoped connection id, surfaced in the metadata-shape HELLO
     /// reply (SRV-014).
     pub fn connection_id(&self) -> u64 {
         self.connection_id

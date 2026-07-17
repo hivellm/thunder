@@ -25,7 +25,7 @@
 pub mod wire;
 
 pub use wire::{
-    decode_frame, decode_frame_with_limit, encode_frame, DecodeError, Profile, Request, Response,
+    decode_frame, decode_frame_with_limit, encode_frame, Config, DecodeError, Request, Response,
     Value, DEFAULT_MAX_FRAME_BYTES, PUSH_ID,
 };
 

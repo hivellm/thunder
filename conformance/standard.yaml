@@ -1,0 +1,34 @@
+# THE Thunder standard configuration (SPEC-002).
+#
+# This is the whole registry. There are no per-product files: Thunder ships
+# one standard and zero product knowledge, because a protocol library that
+# must serve implementations which do not exist yet cannot ship a hardcoded
+# list of the ones that did.
+#
+# Every language pins its `Config::standard()` to this file, so the four
+# implementations can never disagree about what "standard" means — the one
+# guarantee the old per-product registry legitimately provided.
+#
+# An application starts here and overrides only what it needs, in its OWN
+# repository. Convergence is then visible: delete overrides until nothing
+# but identity remains.
+#
+# `scheme` and `default_port` are deliberately absent: identity is the
+# application's, and Thunder has no opinion about it.
+
+handshake: hello_mandatory  # the only shape that negotiates `proto` and
+                            # advertises capabilities — what an evolving
+                            # protocol needs (PRO-001)
+hello_style: map_payload    # {version, token | api_key, client_name};
+                            # reply carries proto + capabilities
+push: reserved              # PUSH_ID is server->client only; emitting is a
+                            # capability an application opts into
+max_frame_bytes: 67108864   # 64 MiB, checked before allocation (WIRE-020)
+max_in_flight: 256          # per-connection request bound
+error_codes: both           # "[CODE] message" superset, recognizing the
+                            # RESP3 auth tokens (NOAUTH/WRONGPASS/NOPERM)
+                            # as codes — a strict superset needs no
+                            # negotiation
+tls: "off"                  # additive capability a deployment turns on,
+                            # never a dialect (quoted: YAML 1.1 loaders
+                            # coerce bare off -> false)

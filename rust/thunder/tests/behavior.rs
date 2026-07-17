@@ -13,18 +13,17 @@ use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpListener;
 
-use thunder::wire::profile::{ErrorConvention, Handshake, HelloStyle, PushPolicy, TlsPolicy};
+use thunder::wire::config::{ErrorConvention, Handshake, HelloStyle, PushPolicy, TlsPolicy};
 use thunder::wire::{read_request_with_limit, write_response, Request, Response, PUSH_ID};
-use thunder::{Client, ClientConfig, ClientError, Profile, Value};
+use thunder::{Client, ClientConfig, ClientError, Config, Value};
 
 /// Frame cap the loopback responders read with.
 const SRV_CAP: usize = 1024 * 1024;
 
 /// A custom profile (PRO-020): no handshake, push reserved, no error
 /// parsing — the neutral baseline the behavioral tests mutate.
-fn plain_profile() -> Profile {
-    Profile {
-        name: "test",
+fn plain_profile() -> Config {
+    Config {
         scheme: "test",
         default_port: 0,
         handshake: Handshake::None,
@@ -35,6 +34,33 @@ fn plain_profile() -> Profile {
         error_codes: ErrorConvention::None,
         tls: TlsPolicy::Off,
     }
+}
+
+/// A config with the `AuthCommand` shape and **no** HELLO — the shape a
+/// deployment whose RPC path authenticates via `AUTH` uses. Named for the
+/// shape: Thunder ships no product configs (PRO-020), so tests build their
+/// own exactly as an application does.
+fn auth_command_config() -> Config {
+    plain_profile()
+        .handshake(Handshake::AuthCommand)
+        .hello_style(HelloStyle::NotUsed)
+        .error_codes(ErrorConvention::Resp3Prefixes)
+}
+
+/// The `AuthCommand` shape plus an optional arg-less HELLO.
+fn argless_hello_config() -> Config {
+    plain_profile()
+        .handshake(Handshake::AuthCommand)
+        .hello_style(HelloStyle::ArgLess)
+        .error_codes(ErrorConvention::Resp3Prefixes)
+}
+
+/// The standard `HelloMandatory` + map-payload shape.
+fn hello_mandatory_config() -> Config {
+    plain_profile()
+        .handshake(Handshake::HelloMandatory)
+        .hello_style(HelloStyle::MapPayload)
+        .error_codes(ErrorConvention::BracketCode)
 }
 
 async fn listener() -> (TcpListener, String) {
@@ -108,7 +134,7 @@ async fn in_flight_bound_backpressures_instead_of_refusing() {
         }
     });
 
-    let profile = Profile {
+    let profile = Config {
         max_in_flight: 1,
         ..plain_profile()
     };
@@ -152,7 +178,7 @@ async fn none_handshake_sends_nothing_before_user_calls() {
     });
 
     // `plain_profile()` is the genuine Handshake::None case. (This test used
-    // to ride on Profile::synap(), which is `AuthCommand` since BN-023.)
+    // to ride on auth_command_config(), which is `AuthCommand` since BN-023.)
     let client = Client::connect(&addr, plain_profile()).await.unwrap();
     assert!(!client.is_authenticated());
     let pong = client.call("PING", vec![]).await.unwrap();
@@ -177,7 +203,7 @@ async fn synap_profile_without_credentials_sends_nothing() {
         send_ok(&mut w, req.id, Value::Str("PONG".to_owned())).await;
     });
 
-    let client = Client::connect(&addr, Profile::synap()).await.unwrap();
+    let client = Client::connect(&addr, auth_command_config()).await.unwrap();
     assert!(!client.is_authenticated());
     let pong = client.call("PING", vec![]).await.unwrap();
     assert_eq!(pong.as_str(), Some("PONG"));
@@ -208,7 +234,7 @@ async fn auth_command_handshake_sends_hello_then_auth_api_key() {
     });
 
     let config = ClientConfig::new().api_key("k-123");
-    let client = Client::connect_with(&addr, Profile::nexus(), config)
+    let client = Client::connect_with(&addr, argless_hello_config(), config)
         .await
         .unwrap();
     assert!(client.is_authenticated());
@@ -246,7 +272,7 @@ async fn synap_profile_sends_auth_and_never_hello() {
     });
 
     let config = ClientConfig::new().user_pass("root", "hunter2");
-    let client = Client::connect_with(&addr, Profile::synap(), config)
+    let client = Client::connect_with(&addr, auth_command_config(), config)
         .await
         .unwrap();
     assert!(client.is_authenticated());
@@ -276,7 +302,7 @@ async fn auth_command_handshake_sends_user_pass() {
     });
 
     let config = ClientConfig::new().user_pass("admin", "hunter2");
-    let client = Client::connect_with(&addr, Profile::nexus(), config)
+    let client = Client::connect_with(&addr, argless_hello_config(), config)
         .await
         .unwrap();
     assert!(client.is_authenticated());
@@ -293,7 +319,9 @@ async fn auth_command_without_credentials_sends_nothing() {
         send_ok(&mut w, req.id, Value::Str("PONG".to_owned())).await;
     });
 
-    let client = Client::connect(&addr, Profile::nexus()).await.unwrap();
+    let client = Client::connect(&addr, argless_hello_config())
+        .await
+        .unwrap();
     client.call("PING", vec![]).await.unwrap();
     server.await.unwrap();
 }
@@ -334,7 +362,7 @@ async fn hello_mandatory_sends_hello_map_first_and_exposes_capabilities() {
     });
 
     let config = ClientConfig::new().token("tok-1").client_name("itest");
-    let client = Client::connect_with(&addr, Profile::vectorizer(), config)
+    let client = Client::connect_with(&addr, hello_mandatory_config(), config)
         .await
         .unwrap();
     assert!(client.is_authenticated());
@@ -352,7 +380,7 @@ async fn handshake_rejection_is_a_typed_auth_error() {
     });
 
     let config = ClientConfig::new().api_key("wrong");
-    let err = Client::connect_with(&addr, Profile::vectorizer(), config)
+    let err = Client::connect_with(&addr, hello_mandatory_config(), config)
         .await
         .unwrap_err();
     // CLT-003: an auth failure is the auth class, not a generic error.
@@ -450,7 +478,7 @@ async fn reconnect_gives_up_after_two_attempts_with_typed_connection_error() {
     });
 
     let config = ClientConfig::new().api_key("k");
-    let client = Client::connect_with(&addr, Profile::vectorizer(), config)
+    let client = Client::connect_with(&addr, hello_mandatory_config(), config)
         .await
         .unwrap();
     client.call("PING", vec![]).await.unwrap();
@@ -482,7 +510,9 @@ async fn resp3_error_mapping_over_the_wire() {
         send_err(&mut w, req.id, "ERR unknown command 'FOO'").await;
     });
 
-    let client = Client::connect(&addr, Profile::nexus()).await.unwrap();
+    let client = Client::connect(&addr, argless_hello_config())
+        .await
+        .unwrap();
     let err = client.call("GET", vec![]).await.unwrap_err();
     assert_eq!(
         err,
@@ -517,7 +547,9 @@ async fn bracket_error_mapping_over_the_wire() {
         .await;
     });
 
-    let client = Client::connect(&addr, Profile::vectorizer()).await.unwrap();
+    let client = Client::connect(&addr, hello_mandatory_config())
+        .await
+        .unwrap();
     let err = client.call("SEARCH", vec![]).await.unwrap_err();
     assert_eq!(
         err,
@@ -545,7 +577,7 @@ async fn push_frames_route_to_handler_under_enabled() {
         send_ok(&mut w, req.id, Value::Str("PONG".to_owned())).await;
     });
 
-    let profile = Profile {
+    let profile = Config {
         push: PushPolicy::Enabled,
         ..plain_profile()
     };
@@ -610,7 +642,7 @@ async fn oversized_inbound_frame_fails_typed_and_poisons() {
         send_ok(&mut w, req.id, Value::Str("recovered".to_owned())).await;
     });
 
-    let profile = Profile {
+    let profile = Config {
         max_frame_bytes: 64,
         ..plain_profile()
     };

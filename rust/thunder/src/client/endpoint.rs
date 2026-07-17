@@ -1,15 +1,15 @@
 //! Endpoint parsing (CLT-070/071).
 //!
-//! Accepts `scheme://host[:port]` for every scheme in the profile
-//! registry — scheme → default-port resolution is data-driven (PRO-012),
-//! products never fork the parser — plus bare `host:port` (RPC implied;
-//! the caller supplies the profile). `http(s)://` URLs are rejected with
-//! a pointer to the product's HTTP client: Thunder is RPC-only.
+//! Accepts `scheme://host[:port]` where the scheme is **the application's
+//! own**, taken from its [`Config`] — Thunder has no registry of schemes to
+//! consult and no product's parser to fork (PRO-012) — plus bare
+//! `host:port` (RPC implied). `http(s)://` URLs are rejected with a pointer
+//! to the application's HTTP client: Thunder is RPC-only.
 //!
 //! Parse failures use the [`ClientError::Connection`] class — an endpoint
 //! that cannot be parsed is an endpoint that cannot be dialed.
 
-use crate::wire::Profile;
+use crate::wire::Config;
 
 use crate::client::error::ClientError;
 
@@ -18,42 +18,38 @@ use crate::client::error::ClientError;
 pub struct Endpoint {
     /// Host name or IP literal (IPv6 without brackets).
     pub host: String,
-    /// Concrete port — explicit, or the scheme's registry default.
+    /// Concrete port — explicit, or the config's `default_port`.
     pub port: u16,
 }
 
-/// Parse an endpoint string (CLT-070).
+/// Parse an endpoint string against the application's [`Config`] (CLT-070).
 ///
 /// Accepted forms:
-/// - `scheme://host[:port]` for every registered profile scheme
-///   (`synap`, `nexus`, `vectorizer`, `lexum`); a missing port resolves
-///   to the scheme's registry default (CLT-071).
-/// - bare `host:port` (RPC implied — the caller supplies the profile).
+/// - `scheme://host[:port]` where `scheme` is `config.scheme`; a missing
+///   port resolves to `config.default_port` (CLT-071).
+/// - bare `host:port` (RPC implied).
 /// - `[v6::addr]:port` / `scheme://[v6::addr][:port]` for IPv6 literals.
 ///
 /// `http://` / `https://` are rejected: Thunder is RPC-only; REST
-/// endpoints belong to the product's HTTP client.
-pub fn parse_endpoint(input: &str) -> Result<Endpoint, ClientError> {
+/// endpoints belong to the application's HTTP client.
+pub fn parse_endpoint(input: &str, config: &Config) -> Result<Endpoint, ClientError> {
     let input = input.trim();
     if let Some((scheme, rest)) = input.split_once("://") {
         let scheme = scheme.to_ascii_lowercase();
         if scheme == "http" || scheme == "https" {
             return Err(invalid(format!(
-                "'{input}' is an HTTP URL and Thunder is RPC-only — use the product's HTTP \
+                "'{input}' is an HTTP URL and Thunder is RPC-only — use the application's HTTP \
                  client for REST endpoints, or pass an RPC endpoint such as \
-                 'vectorizer://host:port' or bare 'host:port'"
+                 'scheme://host:port' or bare 'host:port'"
             )));
         }
-        let profile = Profile::registry()
-            .into_iter()
-            .find(|p| p.scheme == scheme)
-            .ok_or_else(|| {
-                let known = Profile::registry().map(|p| p.scheme).join(", ");
-                invalid(format!(
-                    "unknown endpoint scheme '{scheme}' — registered schemes: {known}; \
-                     or use bare 'host:port'"
-                ))
-            })?;
+        if scheme != config.scheme {
+            let configured = config.scheme;
+            return Err(invalid(format!(
+                "endpoint scheme '{scheme}' does not match this client's configured scheme \
+                 '{configured}' — set the scheme on the Config, or use bare 'host:port'"
+            )));
+        }
         let rest = rest.strip_suffix('/').unwrap_or(rest);
         if rest.contains('/') {
             return Err(invalid(format!(
@@ -63,7 +59,7 @@ pub fn parse_endpoint(input: &str) -> Result<Endpoint, ClientError> {
         let (host, port) = split_host_port(rest)?;
         Ok(Endpoint {
             host,
-            port: port.unwrap_or(profile.default_port),
+            port: port.unwrap_or(config.default_port),
         })
     } else {
         let (host, port) = split_host_port(input)?;
@@ -126,19 +122,35 @@ fn invalid(message: String) -> ClientError {
 mod tests {
     use super::*;
 
+    /// An application's config — Thunder ships no schemes of its own, so
+    /// the tests bring their own, exactly as an application does.
+    fn app() -> Config {
+        Config::standard().scheme("myapp").port(9000)
+    }
+
     #[test]
-    fn every_registered_scheme_resolves_its_default_port() {
-        // CLT-071: scheme → default port comes from the registry.
-        for profile in Profile::registry() {
-            let ep = parse_endpoint(&format!("{}://db.example.com", profile.scheme)).unwrap();
-            assert_eq!(ep.host, "db.example.com");
-            assert_eq!(ep.port, profile.default_port, "{}", profile.scheme);
-        }
+    fn the_configured_scheme_resolves_the_configured_default_port() {
+        // CLT-071: scheme → default port comes from the application's own
+        // config, not from any registry Thunder carries.
+        let ep = parse_endpoint("myapp://db.example.com", &app()).unwrap();
+        assert_eq!(ep.host, "db.example.com");
+        assert_eq!(ep.port, 9000);
+    }
+
+    #[test]
+    fn any_application_can_pick_any_scheme_without_a_thunder_release() {
+        // The whole point of dropping the registry: a scheme Thunder has
+        // never heard of works because the application configured it.
+        let future = Config::standard()
+            .scheme("something-new-in-2030")
+            .port(4242);
+        let ep = parse_endpoint("something-new-in-2030://host", &future).unwrap();
+        assert_eq!(ep.port, 4242);
     }
 
     #[test]
     fn explicit_port_wins_over_default() {
-        let ep = parse_endpoint("nexus://10.0.0.7:9999").unwrap();
+        let ep = parse_endpoint("myapp://10.0.0.7:9999", &app()).unwrap();
         assert_eq!(
             ep,
             Endpoint {
@@ -150,7 +162,7 @@ mod tests {
 
     #[test]
     fn bare_host_port_is_accepted_rpc_implied() {
-        let ep = parse_endpoint("localhost:15501").unwrap();
+        let ep = parse_endpoint("localhost:15501", &app()).unwrap();
         assert_eq!(
             ep,
             Endpoint {
@@ -161,39 +173,48 @@ mod tests {
     }
 
     #[test]
+    fn bare_host_port_works_even_with_no_scheme_configured() {
+        // Config::standard() has no identity until an application gives it
+        // one; an explicit host:port needs none.
+        let ep = parse_endpoint("localhost:15501", &Config::standard()).unwrap();
+        assert_eq!(ep.port, 15501);
+    }
+
+    #[test]
     fn bare_host_without_port_is_rejected() {
-        let err = parse_endpoint("localhost").unwrap_err();
+        let err = parse_endpoint("localhost", &app()).unwrap_err();
         assert!(matches!(err, ClientError::Connection { .. }));
     }
 
     #[test]
     fn http_and_https_are_rejected_with_pointer_to_http_client() {
         for url in ["http://vec.example.com:8080", "https://vec.example.com"] {
-            let err = parse_endpoint(url).unwrap_err();
+            let err = parse_endpoint(url, &app()).unwrap_err();
             let ClientError::Connection { message } = err else {
                 panic!("expected the connection class, got {err:?}");
             };
             assert!(
                 message.contains("RPC-only") && message.contains("HTTP client"),
-                "rejection must point at the product HTTP client: {message}"
+                "rejection must point at the application's HTTP client: {message}"
             );
         }
     }
 
     #[test]
-    fn unknown_scheme_is_rejected_listing_the_registry() {
-        let err = parse_endpoint("redis://h:1").unwrap_err();
+    fn a_scheme_other_than_the_configured_one_is_rejected() {
+        let err = parse_endpoint("redis://h:1", &app()).unwrap_err();
         let ClientError::Connection { message } = err else {
             panic!("expected the connection class");
         };
-        for scheme in ["synap", "nexus", "vectorizer", "lexum"] {
-            assert!(message.contains(scheme), "must list '{scheme}': {message}");
-        }
+        assert!(
+            message.contains("redis") && message.contains("myapp"),
+            "the mismatch must name both the given and the configured scheme: {message}"
+        );
     }
 
     #[test]
     fn ipv6_literals_parse_with_and_without_brackets() {
-        let ep = parse_endpoint("[::1]:8080").unwrap();
+        let ep = parse_endpoint("[::1]:8080", &app()).unwrap();
         assert_eq!(
             ep,
             Endpoint {
@@ -201,22 +222,27 @@ mod tests {
                 port: 8080
             }
         );
-        let ep = parse_endpoint("synap://[fe80::1]").unwrap();
+        let ep = parse_endpoint("myapp://[fe80::1]", &app()).unwrap();
         assert_eq!(ep.host, "fe80::1");
-        assert_eq!(ep.port, Profile::synap().default_port);
+        assert_eq!(ep.port, 9000);
     }
 
     #[test]
     fn trailing_slash_is_tolerated_but_paths_are_not() {
-        let ep = parse_endpoint("lexum://h/").unwrap();
-        assert_eq!(ep.port, Profile::lexum().default_port);
-        assert!(parse_endpoint("lexum://h/db").is_err());
+        let ep = parse_endpoint("myapp://h/", &app()).unwrap();
+        assert_eq!(ep.port, 9000);
+        assert!(parse_endpoint("myapp://h/db", &app()).is_err());
     }
 
     #[test]
     fn invalid_ports_are_rejected() {
-        assert!(parse_endpoint("host:99999").is_err());
-        assert!(parse_endpoint("synap://host:abc").is_err());
-        assert!(parse_endpoint(":1234").is_err());
+        assert!(parse_endpoint("host:99999", &app()).is_err());
+        assert!(parse_endpoint("host:abc", &app()).is_err());
+    }
+
+    #[test]
+    fn empty_host_is_rejected() {
+        assert!(parse_endpoint("myapp://:1234", &app()).is_err());
+        assert!(parse_endpoint(":1234", &app()).is_err());
     }
 }

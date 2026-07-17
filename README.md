@@ -2,7 +2,7 @@
 
 **⚡ The HiveLLM binary RPC protocol as a single shared module — one wire, one codec, one client contract, every language**
 
-![Status](https://img.shields.io/badge/status-analysis%20complete%20%2F%20pre--implementation-blue.svg)
+![Status](https://img.shields.io/badge/status-0.1.0%20published-success.svg)
 ![Wire](https://img.shields.io/badge/wire%20protocol-v1%20(frozen)-success.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 ![Languages](https://img.shields.io/badge/targets-Rust%20%7C%20TypeScript%20%7C%20Python%20%7C%20C%23-orange.svg)
@@ -68,19 +68,24 @@ Every Thunder client, in every language: demux by id (pipelining) · frame cap o
 
 ## 📦 Packages
 
-> Names are the working proposal (P0 confirms registry availability — see [§2.5](docs/analysis/02-module-design.md)).
+All four packages are **published at 0.1.0**. Wire v1 is frozen; the API is not — 0.x may still break.
 
-| Language | Package | Serialization |
-|---|---|---|
-| Rust | `thunder` (crates.io) — one crate; `wire` always on, `client`/`server` features (default on) | `rmp-serde` 1.x |
-| TypeScript | `@hivehub/thunder` (npm) | `@msgpack/msgpack` ^3 |
-| Python | `hivellm-thunder` (PyPI, import `thunder_rpc`) — sync **and** async clients | `msgpack` ≥1.1 |
-| C# | `HiveLLM.Thunder` (NuGet, `net8.0`) | `MessagePack` 2.5.x — low-level writer/reader only, never `Typeless` |
-| Go *(fast-follow)* | `github.com/hivellm/thunder-go` | `vmihailenco/msgpack` v5 |
+| Language | Package | Install | Serialization |
+|---|---|---|---|
+| Rust | `thunder-rpc` (crates.io) — one crate; `wire` always on, `client`/`server` features (default on) | `cargo add thunder-rpc` | `rmp-serde` 1.x |
+| TypeScript | `@hivehub/thunder` (npm) | `npm i @hivehub/thunder` | `@msgpack/msgpack` ^3 |
+| Python | `hivellm-thunder` (PyPI) — sync **and** async clients | `pip install hivellm-thunder` | `msgpack` ≥1.1 |
+| C# | `HiveLLM.Thunder` (NuGet, `net8.0`) | `dotnet add package HiveLLM.Thunder` | `MessagePack` 2.5.x — low-level writer/reader only, never `Typeless` |
+| Go *(fast-follow)* | `github.com/hivellm/thunder-go` | *not yet published* | `vmihailenco/msgpack` v5 |
+
+Two registry names differ from their import names, both deliberately:
+
+- **Rust**: `thunder` was already taken on crates.io, so the crate publishes as `thunder-rpc` while the lib name stays `thunder` — `cargo add thunder-rpc` gives you `use thunder::…`.
+- **Python**: the distribution is `hivellm-thunder`, the import is `thunder_rpc` — `pip install hivellm-thunder`, then `import thunder_rpc`.
 
 The per-product `-protocol` crates (`nexus-protocol`, `vectorizer-protocol`, `synap-protocol`) are **dissolved, not wrapped**: servers and SDKs depend on Thunder's registry packages directly; the old crates exit via a terminal deprecated re-export shim. Full recipe: [§5 of the analysis](docs/analysis/05-protocol-crate-dissolution.md).
 
-### Planned usage (API sketch)
+### Usage
 
 ```rust
 // Rust
@@ -104,6 +109,31 @@ const app = Config.standard().withScheme("myapp").withPort(9000);
 const client = await Client.connect("myapp://127.0.0.1", app, { apiKey });
 const result = await client.call("SEARCH", [Value.str("hello")]);
 ```
+
+```python
+# Python — sync; an AsyncClient with the same shape ships alongside it
+from thunder_rpc import Client, ClientConfig, Config, Credentials, Value
+
+app = Config.standard().with_scheme("myapp").with_port(9000)
+cfg = ClientConfig(credentials=Credentials.api_key("secret-key"))
+
+with Client.connect("myapp://localhost", app, cfg) as client:
+    pong = client.call("PING")
+    hits = client.call("SEARCH", [Value.str("docs")], timeout=5.0)
+```
+
+```csharp
+// C#
+using HiveLLM.Thunder;
+
+var app = Config.Standard() with { Scheme = "myapp", DefaultPort = 9000 };
+var cfg = new ClientConfig { Credentials = Credentials.ApiKey("secret-key") };
+
+await using var client = await ThunderClient.ConnectAsync("myapp://localhost", app, cfg);
+var pong = await client.CallAsync("PING");
+```
+
+Per-language detail: [rust](rust/) · [typescript/README.md](typescript/README.md) · [python/README.md](python/README.md) · [csharp/README.md](csharp/README.md).
 
 ## 🗂 Configuration — one standard, zero product knowledge
 

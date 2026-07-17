@@ -38,3 +38,5 @@ __pycache__/
 *.egg-info/
 csharp/**/bin/
 csharp/**/obj/
+.pypirc
+nuget.config

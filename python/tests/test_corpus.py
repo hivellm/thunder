@@ -175,5 +175,5 @@ def test_corpus_vector(path: Path) -> None:
 
 
 def test_corpus_floor() -> None:
-    """The corpus must not silently shrink (TST-020; 1.0 floor is 38)."""
-    assert len(VECTOR_PATHS) >= 38, f"found {len(VECTOR_PATHS)} vectors, floor is 38"
+    """The corpus must not silently shrink (TST-020; 1.0 floor is 39)."""
+    assert len(VECTOR_PATHS) >= 39, f"found {len(VECTOR_PATHS)} vectors, floor is 39"

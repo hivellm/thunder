@@ -62,7 +62,9 @@ CancellationToken) is expected; semantics below are not negotiable.
 
 - **CLT-050** [P0] `Result::Err(string)` SHALL be parsed per the profile's `error_codes`
   (PRO-014) into a typed error carrying: raw message, optional `code` (from `"[code] "`), and
-  error class (auth / server / connection / timeout / frame-too-large / decode).
+  error class (auth / server / connection / timeout / frame-too-large / decode). The canonical
+  emission grammar the parser targets — bracketed `[CODE]` plus the bare auth-token set — is pinned
+  in SPEC-008 CAN-030/CAN-031.
 - **CLT-051** [P0] `NOAUTH`/`WRONGPASS`/`NOPERM` prefixes map to the auth class regardless of
   convention (both existing conventions use them for auth). `NOPERM` — Synap's admin-ACL refusal
   (`synap_rpc/server.rs:243-245`) — was unmodeled until the BN-023 errata; it is an

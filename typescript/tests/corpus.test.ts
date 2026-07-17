@@ -265,7 +265,7 @@ const vectors = files.map((file) => {
 });
 
 test("corpus does not silently shrink (TST-003 floor)", () => {
-  expect(vectors.length).toBeGreaterThanOrEqual(38);
+  expect(vectors.length).toBeGreaterThanOrEqual(39);
 });
 
 for (const vector of vectors) {

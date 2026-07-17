@@ -30,6 +30,7 @@ Traceability chain: **PRD** requirement IDs (`FR-xx`, `NFR-xx`) → **DAG** task
 | [SPEC-005](SPEC-005-conformance.md) — Conformance & Testing | Golden-vector corpus format and groups, per-language loaders, reference cross-decode, pairwise fuzz, live interop, gate rules | `TST-` | Corpus format freezes at G1 |
 | [SPEC-006](SPEC-006-packaging-release.md) — Packaging, Release & Dissolution | Package names/registries, release train, semver, `-protocol` crate dissolution, no-path-deps rule | `PKG-` | Names freeze at G0 |
 | [SPEC-007](SPEC-007-benchmarks.md) — Benchmarks & the G5 Gate | Transport shootout (RESP3/Bolt/HTTP), scenario matrix, harness parity, artifacts, always-win gate, claims discipline | `BEN-` | Matrix freezes at G4 |
+| [SPEC-008](SPEC-008-canonical-behavior.md) — Canonical Behavior | The single family behavior per dimension (handshake, TLS, error grammar, caps, push) and its optionality; the shape ≠ policy principle; the pinned error-grammar spelling | `CAN-` | Canonical behavior freezes at G1 |
 
 ## Conventions
 

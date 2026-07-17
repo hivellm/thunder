@@ -1,0 +1,9 @@
+name: response-err-noperm
+group: value
+mode: bidirectional
+frame_hex: "3f 00 00 00 92 09 81 a3 45 72 72 d9 36 4e 4f 50 45 52 4d 20 74 68 69 73 20 75 73 65 72 20 68 61 73 20 6e 6f 20 70 65 72 6d 69 73 73 69 6f 6e 73 20 74 6f 20 72 75 6e 20 74 68 65 20 63 6f 6d 6d 61 6e 64"
+decoded:
+  kind: response
+  id: 9
+  err: "NOPERM this user has no permissions to run the command"
+notes: "The NOPERM authorization refusal (Synap's admin-ACL, synap_rpc/server.rs:243-245) — a bare RESP3-family auth token, emitted verbatim per the canonical error grammar (SPEC-008 CAN-030/CAN-031). NOPERM was unmodeled until the BN-023 errata and joins {NOAUTH, WRONGPASS, NOPERM, NOPROTO} as a recognized auth-class code (CLT-051). Covers WIRE-040, SPEC-008 CAN-031."

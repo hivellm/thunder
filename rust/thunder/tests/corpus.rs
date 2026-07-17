@@ -284,7 +284,7 @@ fn corpus_vectors_hold() {
         checked += 1;
     }
     assert!(
-        checked >= 38,
+        checked >= 39,
         "corpus must not silently shrink (found {checked}, floor 38)"
     );
 }

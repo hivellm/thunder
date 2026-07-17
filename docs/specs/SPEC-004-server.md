@@ -111,7 +111,7 @@ enforcement) is Thunder's.
 
 - **SRV-040** [P1] Optional `tokio-rustls`, config-gated (`tls.cert_path` / `tls.key_path`),
   feature-gated in the crate (`tls`). No STARTTLS. Default bind guidance stays loopback/private —
-  the family's documented posture.
+  the family's documented posture. Canonical optionality (off by default, additive): SPEC-008 CAN-020.
   **Ordering constraint**: Vectorizer already ships config-gated rustls on its RPC listener; if
   any Vectorizer deployment has it enabled, this requirement is pulled forward into M1 so the
   T2.2 swap is not a regression — verify at T0 and record the decision.

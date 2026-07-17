@@ -41,8 +41,8 @@ public class CorpusTests
     public void Corpus_does_not_silently_shrink()
     {
         Assert.True(
-            VectorPaths().Count() >= 38,
-            $"corpus must not silently shrink (found {VectorPaths().Count()}, floor 38)");
+            VectorPaths().Count() >= 39,
+            $"corpus must not silently shrink (found {VectorPaths().Count()}, floor 39)");
     }
 
     [Theory]

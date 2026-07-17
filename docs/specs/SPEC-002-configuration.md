@@ -52,7 +52,7 @@ needs live there, as the reference for configuring it — knowledge, not a catal
 
   Conflating the two is what once left an `AuthCommand` application modelled as `handshake: none`
   — because it *can* run open — unable to authenticate at all when it required credentials
-  (BN-023).
+  (BN-023). This principle governs the whole canonical-behavior program: SPEC-008 CAN-002.
 
 - **PRO-002** [P0] Config fields SHALL have defaults (the standard's values) such that adding a
   field is a **minor** release — older data files and existing applications stay valid.

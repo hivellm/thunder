@@ -1,0 +1,177 @@
+name: Release
+
+# PKG-011: one release train — every registry publishes from ONE tag, in
+# lockstep. Until this existed, releasing meant running four publish commands by
+# hand, which is how a PyPI/NuGet token ends up living in a product repo. No
+# credential belongs in a repository; the two below live in GitHub's secret
+# store, and PyPI needs no credential at all (see the pypi job).
+#
+# Trigger: push a tag `v<semver>` matching the version in the manifests.
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The gate runs first and every publish job needs it (PKG-002's order applies to
+# releases too): nothing reaches a registry that has not passed fmt/lint/tests
+# on the tagged commit. A registry publish cannot be undone — crates.io and npm
+# do not delete, PyPI will not let a version be reused, NuGet only unlists — so
+# the gate is the last place a mistake is still cheap.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # One gate for the whole train. If this is red, no registry is touched.
+  gate:
+    name: quality gate (blocks every publish)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Rust
+        working-directory: rust
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-features -- -D warnings
+          cargo test --workspace --all-features
+      - name: TypeScript
+        working-directory: typescript
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm test
+      - name: Python
+        working-directory: python
+        run: |
+          pip install -e ".[dev]"
+          ruff check .
+          pytest
+      - name: C#
+        working-directory: csharp
+        run: |
+          dotnet build -c Release -warnaserror
+          dotnet test -c Release --no-build
+      # The tag is the version. A tag that disagrees with the manifests would
+      # publish something other than what it claims — and the wrong version
+      # cannot be recalled from any of these registries.
+      - name: Tag must match the manifests
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          fail=0
+          check() { # name expected
+            if [ "$2" != "$TAG" ]; then
+              echo "::error::$1 is $2 but the tag says $TAG"; fail=1
+            else
+              echo "ok: $1 = $2"
+            fi
+          }
+          check "rust workspace" "$(grep -m1 '^version' rust/Cargo.toml | cut -d'"' -f2)"
+          check "typescript"     "$(node -p "require('./typescript/package.json').version")"
+          check "python"         "$(grep -m1 '^version' python/pyproject.toml | cut -d'"' -f2)"
+          check "csharp"         "$(grep -oPm1 '(?<=<Version>)[^<]+' csharp/HiveLLM.Thunder/HiveLLM.Thunder.csproj)"
+          exit $fail
+
+  crates:
+    name: crates.io (thunder-rpc)
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The crate is `thunder-rpc`; `thunder` was taken (a dormant 2018 crate).
+      # The lib name is still `thunder`, so consumers `use thunder::`.
+      - name: Publish
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p thunder-rpc
+
+  npm:
+    name: npm (@hivehub/thunder)
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # provenance attestation, not a credential
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - working-directory: typescript
+        run: npm ci
+      # --provenance signs the package with this workflow's OIDC identity, so
+      # consumers can verify it was built here from this tag rather than on
+      # someone's laptop.
+      - name: Publish
+        working-directory: typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
+
+  pypi:
+    name: PyPI (hivellm-thunder)
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        working-directory: python
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+      # Trusted Publishing: PyPI verifies this workflow's OIDC identity and
+      # mints a short-lived token itself. There is NO API token to store, leak,
+      # rotate, or find in a product repo — which is the whole point.
+      #
+      # One-time owner setup at https://pypi.org/manage/project/hivellm-thunder/settings/publishing/
+      #   owner: hivellm | repo: thunder | workflow: release.yml | environment: pypi
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
+
+  nuget:
+    name: NuGet (HiveLLM.Thunder)
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Pack
+        working-directory: csharp
+        run: dotnet pack -c Release
+      - name: Publish
+        working-directory: csharp
+        run: |
+          dotnet nuget push "HiveLLM.Thunder/bin/Release/*.nupkg" \
+            -s https://api.nuget.org/v3/index.json \
+            -k "${{ secrets.NUGET_API_KEY }}" \
+            --skip-duplicate

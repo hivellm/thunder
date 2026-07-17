@@ -1,0 +1,940 @@
+{
+  "schema": "thunder-bench/skeleton-v1",
+  "environment": {
+    "os": "windows",
+    "arch": "x86_64",
+    "cpus": 32,
+    "hostname": "BOLADO",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "build_profile": "release",
+    "timestamp_unix": 1784270554,
+    "timestamp_utc": "2026-07-17T06:42:34Z",
+    "kernel": "unknown (platform probe lands at T4.3)",
+    "governor": "unknown (platform probe lands at T4.3)"
+  },
+  "config": {
+    "ops": 256,
+    "warmup": 64,
+    "repetitions": 2,
+    "lanes": [
+      "thunder",
+      "http"
+    ],
+    "scenarios": [
+      "point-echo-64B",
+      "medium-4KiB",
+      "bulk-10k",
+      "embedding-768",
+      "pipelined-1k",
+      "connection-storm"
+    ]
+  },
+  "cells": [
+    {
+      "scenario": "point-echo-64B",
+      "lane": "thunder",
+      "depth": 1,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0097809,
+          "p50_us": 31.099999999999998,
+          "p99_us": 119.5,
+          "qps": 26173.46051999305
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0083036,
+          "p50_us": 30.3,
+          "p99_us": 61.8,
+          "qps": 30830.00144515632
+        }
+      ],
+      "p50_us": {
+        "min": 30.3,
+        "mean": 30.7,
+        "max": 31.099999999999998
+      },
+      "p99_us": {
+        "min": 61.8,
+        "mean": 90.65,
+        "max": 119.5
+      },
+      "qps": {
+        "min": 26173.46051999305,
+        "mean": 28501.730982574685,
+        "max": 30830.00144515632
+      },
+      "bytes_in_per_op": 84.50390625,
+      "bytes_out_per_op": 82.50390625
+    },
+    {
+      "scenario": "point-echo-64B",
+      "lane": "thunder",
+      "depth": 1,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0075655,
+          "p50_us": 111.8,
+          "p99_us": 184.9,
+          "qps": 33837.816403410216
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0072801,
+          "p50_us": 110.9,
+          "p99_us": 185.4,
+          "qps": 35164.352138020084
+        }
+      ],
+      "p50_us": {
+        "min": 110.9,
+        "mean": 111.35,
+        "max": 111.8
+      },
+      "p99_us": {
+        "min": 184.9,
+        "mean": 185.15,
+        "max": 185.4
+      },
+      "qps": {
+        "min": 33837.816403410216,
+        "mean": 34501.084270715146,
+        "max": 35164.352138020084
+      },
+      "bytes_in_per_op": 83.1328125,
+      "bytes_out_per_op": 81.1328125
+    },
+    {
+      "scenario": "point-echo-64B",
+      "lane": "thunder",
+      "depth": 16,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.003945,
+          "p50_us": 213.4,
+          "p99_us": 491.29999999999995,
+          "qps": 64892.26869455007
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0036453,
+          "p50_us": 215.0,
+          "p99_us": 385.3,
+          "qps": 70227.41612487313
+        }
+      ],
+      "p50_us": {
+        "min": 213.4,
+        "mean": 214.2,
+        "max": 215.0
+      },
+      "p99_us": {
+        "min": 385.3,
+        "mean": 438.29999999999995,
+        "max": 491.29999999999995
+      },
+      "qps": {
+        "min": 64892.26869455007,
+        "mean": 67559.8424097116,
+        "max": 70227.41612487313
+      },
+      "bytes_in_per_op": 84.50390625,
+      "bytes_out_per_op": 82.50390625
+    },
+    {
+      "scenario": "point-echo-64B",
+      "lane": "thunder",
+      "depth": 16,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0018498,
+          "p50_us": 377.3,
+          "p99_us": 650.8,
+          "qps": 138393.33982052113
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0035959,
+          "p50_us": 415.70000000000005,
+          "p99_us": 732.3,
+          "qps": 71192.191106538
+        }
+      ],
+      "p50_us": {
+        "min": 377.3,
+        "mean": 396.5,
+        "max": 415.70000000000005
+      },
+      "p99_us": {
+        "min": 650.8,
+        "mean": 691.55,
+        "max": 732.3
+      },
+      "qps": {
+        "min": 71192.191106538,
+        "mean": 104792.76546352956,
+        "max": 138393.33982052113
+      },
+      "bytes_in_per_op": 83.1328125,
+      "bytes_out_per_op": 81.1328125
+    },
+    {
+      "scenario": "point-echo-64B",
+      "lane": "http",
+      "depth": 1,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0221586,
+          "p50_us": 77.3,
+          "p99_us": 214.5,
+          "qps": 11553.076457898964
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0203375,
+          "p50_us": 77.39999999999999,
+          "p99_us": 108.7,
+          "qps": 12587.58451137062
+        }
+      ],
+      "p50_us": {
+        "min": 77.3,
+        "mean": 77.35,
+        "max": 77.39999999999999
+      },
+      "p99_us": {
+        "min": 108.7,
+        "mean": 161.6,
+        "max": 214.5
+      },
+      "qps": {
+        "min": 11553.076457898964,
+        "mean": 12070.330484634793,
+        "max": 12587.58451137062
+      },
+      "bytes_in_per_op": 181.0,
+      "bytes_out_per_op": 158.0
+    },
+    {
+      "scenario": "point-echo-64B",
+      "lane": "http",
+      "depth": 1,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0077777,
+          "p50_us": 112.0,
+          "p99_us": 185.0,
+          "qps": 32914.61486043432
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0087393,
+          "p50_us": 115.5,
+          "p99_us": 344.3,
+          "qps": 29292.963967365806
+        }
+      ],
+      "p50_us": {
+        "min": 112.0,
+        "mean": 113.75,
+        "max": 115.5
+      },
+      "p99_us": {
+        "min": 185.0,
+        "mean": 264.65,
+        "max": 344.3
+      },
+      "qps": {
+        "min": 29292.963967365806,
+        "mean": 31103.789413900064,
+        "max": 32914.61486043432
+      },
+      "bytes_in_per_op": 181.0,
+      "bytes_out_per_op": 158.0
+    },
+    {
+      "scenario": "point-echo-64B",
+      "lane": "http",
+      "depth": 16,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0035766,
+          "p50_us": 117.8,
+          "p99_us": 284.20000000000005,
+          "qps": 71576.35743443493
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0037631,
+          "p50_us": 125.49999999999999,
+          "p99_us": 301.7,
+          "qps": 68029.01862825861
+        }
+      ],
+      "p50_us": {
+        "min": 117.8,
+        "mean": 121.64999999999999,
+        "max": 125.49999999999999
+      },
+      "p99_us": {
+        "min": 284.20000000000005,
+        "mean": 292.95000000000005,
+        "max": 301.7
+      },
+      "qps": {
+        "min": 68029.01862825861,
+        "mean": 69802.68803134677,
+        "max": 71576.35743443493
+      },
+      "bytes_in_per_op": 181.0,
+      "bytes_out_per_op": 158.0
+    },
+    {
+      "scenario": "point-echo-64B",
+      "lane": "http",
+      "depth": 16,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0018955,
+          "p50_us": 338.59999999999997,
+          "p99_us": 509.8,
+          "qps": 135056.71326826693
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0019203,
+          "p50_us": 319.1,
+          "p99_us": 574.4,
+          "qps": 133312.50325469978
+        }
+      ],
+      "p50_us": {
+        "min": 319.1,
+        "mean": 328.85,
+        "max": 338.59999999999997
+      },
+      "p99_us": {
+        "min": 509.8,
+        "mean": 542.1,
+        "max": 574.4
+      },
+      "qps": {
+        "min": 133312.50325469978,
+        "mean": 134184.60826148337,
+        "max": 135056.71326826693
+      },
+      "bytes_in_per_op": 181.0,
+      "bytes_out_per_op": 158.0
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "thunder",
+      "depth": 1,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0094245,
+          "p50_us": 31.8,
+          "p99_us": 81.10000000000001,
+          "qps": 27163.24473446867
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0098221,
+          "p50_us": 32.6,
+          "p99_us": 108.2,
+          "qps": 26063.672738009183
+        }
+      ],
+      "p50_us": {
+        "min": 31.8,
+        "mean": 32.2,
+        "max": 32.6
+      },
+      "p99_us": {
+        "min": 81.10000000000001,
+        "mean": 94.65,
+        "max": 108.2
+      },
+      "qps": {
+        "min": 26063.672738009183,
+        "mean": 26613.45873623893,
+        "max": 27163.24473446867
+      },
+      "bytes_in_per_op": 15.50390625,
+      "bytes_out_per_op": 4115.50390625
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "thunder",
+      "depth": 1,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0080359,
+          "p50_us": 119.1,
+          "p99_us": 210.39999999999998,
+          "qps": 31857.041526151395
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0082313,
+          "p50_us": 118.8,
+          "p99_us": 213.9,
+          "qps": 31100.798172828105
+        }
+      ],
+      "p50_us": {
+        "min": 118.8,
+        "mean": 118.94999999999999,
+        "max": 119.1
+      },
+      "p99_us": {
+        "min": 210.39999999999998,
+        "mean": 212.14999999999998,
+        "max": 213.9
+      },
+      "qps": {
+        "min": 31100.798172828105,
+        "mean": 31478.91984948975,
+        "max": 31857.041526151395
+      },
+      "bytes_in_per_op": 14.1328125,
+      "bytes_out_per_op": 4114.1328125
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "thunder",
+      "depth": 16,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0464869,
+          "p50_us": 237.4,
+          "p99_us": 498.4,
+          "qps": 5506.927758142617
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0055503,
+          "p50_us": 326.2,
+          "p99_us": 605.8,
+          "qps": 46123.63295677711
+        }
+      ],
+      "p50_us": {
+        "min": 237.4,
+        "mean": 281.8,
+        "max": 326.2
+      },
+      "p99_us": {
+        "min": 498.4,
+        "mean": 552.0999999999999,
+        "max": 605.8
+      },
+      "qps": {
+        "min": 5506.927758142617,
+        "mean": 25815.280357459862,
+        "max": 46123.63295677711
+      },
+      "bytes_in_per_op": 15.50390625,
+      "bytes_out_per_op": 4115.50390625
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "thunder",
+      "depth": 16,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0070382,
+          "p50_us": 535.8000000000001,
+          "p99_us": 1008.9999999999999,
+          "qps": 36372.936262112475
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0022986,
+          "p50_us": 424.9,
+          "p99_us": 992.4999999999999,
+          "qps": 111372.13956321239
+        }
+      ],
+      "p50_us": {
+        "min": 424.9,
+        "mean": 480.35,
+        "max": 535.8000000000001
+      },
+      "p99_us": {
+        "min": 992.4999999999999,
+        "mean": 1000.7499999999999,
+        "max": 1008.9999999999999
+      },
+      "qps": {
+        "min": 36372.936262112475,
+        "mean": 73872.53791266243,
+        "max": 111372.13956321239
+      },
+      "bytes_in_per_op": 14.1328125,
+      "bytes_out_per_op": 4114.1328125
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "http",
+      "depth": 1,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0256429,
+          "p50_us": 96.5,
+          "p99_us": 178.8,
+          "qps": 9983.270222946703
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0237169,
+          "p50_us": 90.69999999999999,
+          "p99_us": 132.29999999999998,
+          "qps": 10793.990782943809
+        }
+      ],
+      "p50_us": {
+        "min": 90.69999999999999,
+        "mean": 93.6,
+        "max": 96.5
+      },
+      "p99_us": {
+        "min": 132.29999999999998,
+        "mean": 155.55,
+        "max": 178.8
+      },
+      "qps": {
+        "min": 9983.270222946703,
+        "mean": 10388.630502945256,
+        "max": 10793.990782943809
+      },
+      "bytes_in_per_op": 117.0,
+      "bytes_out_per_op": 4192.0
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "http",
+      "depth": 1,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0104267,
+          "p50_us": 137.5,
+          "p99_us": 254.70000000000002,
+          "qps": 24552.351175347903
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.00978,
+          "p50_us": 134.5,
+          "p99_us": 212.5,
+          "qps": 26175.869120654395
+        }
+      ],
+      "p50_us": {
+        "min": 134.5,
+        "mean": 136.0,
+        "max": 137.5
+      },
+      "p99_us": {
+        "min": 212.5,
+        "mean": 233.60000000000002,
+        "max": 254.70000000000002
+      },
+      "qps": {
+        "min": 24552.351175347903,
+        "mean": 25364.11014800115,
+        "max": 26175.869120654395
+      },
+      "bytes_in_per_op": 117.0,
+      "bytes_out_per_op": 4192.0
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "http",
+      "depth": 16,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0046938,
+          "p50_us": 179.70000000000002,
+          "p99_us": 369.59999999999997,
+          "qps": 54540.03153095573
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0055782,
+          "p50_us": 318.0,
+          "p99_us": 436.59999999999997,
+          "qps": 45892.94037503137
+        }
+      ],
+      "p50_us": {
+        "min": 179.70000000000002,
+        "mean": 248.85000000000002,
+        "max": 318.0
+      },
+      "p99_us": {
+        "min": 369.59999999999997,
+        "mean": 403.09999999999997,
+        "max": 436.59999999999997
+      },
+      "qps": {
+        "min": 45892.94037503137,
+        "mean": 50216.48595299355,
+        "max": 54540.03153095573
+      },
+      "bytes_in_per_op": 117.0,
+      "bytes_out_per_op": 4192.0
+    },
+    {
+      "scenario": "medium-4KiB",
+      "lane": "http",
+      "depth": 16,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0099047,
+          "p50_us": 454.2,
+          "p99_us": 851.3000000000001,
+          "qps": 25846.315385625003
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.0136034,
+          "p50_us": 503.1,
+          "p99_us": 11098.2,
+          "qps": 18818.824705588308
+        }
+      ],
+      "p50_us": {
+        "min": 454.2,
+        "mean": 478.65,
+        "max": 503.1
+      },
+      "p99_us": {
+        "min": 851.3000000000001,
+        "mean": 5974.75,
+        "max": 11098.2
+      },
+      "qps": {
+        "min": 18818.824705588308,
+        "mean": 22332.570045606655,
+        "max": 25846.315385625003
+      },
+      "bytes_in_per_op": 117.0,
+      "bytes_out_per_op": 4192.0
+    },
+    {
+      "scenario": "bulk-10k",
+      "lane": "-",
+      "depth": 0,
+      "connections": 0,
+      "status": "pending — lands at T4.3",
+      "reps": [],
+      "p50_us": null,
+      "p99_us": null,
+      "qps": null,
+      "bytes_in_per_op": null,
+      "bytes_out_per_op": null
+    },
+    {
+      "scenario": "embedding-768",
+      "lane": "-",
+      "depth": 0,
+      "connections": 0,
+      "status": "pending — lands at T4.3",
+      "reps": [],
+      "p50_us": null,
+      "p99_us": null,
+      "qps": null,
+      "bytes_in_per_op": null,
+      "bytes_out_per_op": null
+    },
+    {
+      "scenario": "pipelined-1k",
+      "lane": "thunder",
+      "depth": 1000,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 1000,
+          "elapsed_secs": 0.0123581,
+          "p50_us": 5489.5,
+          "p99_us": 10793.1,
+          "qps": 80918.58780880556
+        },
+        {
+          "ops": 1000,
+          "elapsed_secs": 0.0138188,
+          "p50_us": 6755.9,
+          "p99_us": 12593.800000000001,
+          "qps": 72365.18366283613
+        }
+      ],
+      "p50_us": {
+        "min": 5489.5,
+        "mean": 6122.7,
+        "max": 6755.9
+      },
+      "p99_us": {
+        "min": 10793.1,
+        "mean": 11693.45,
+        "max": 12593.800000000001
+      },
+      "qps": {
+        "min": 72365.18366283613,
+        "mean": 76641.88573582085,
+        "max": 80918.58780880556
+      },
+      "bytes_in_per_op": 85.0,
+      "bytes_out_per_op": 83.0
+    },
+    {
+      "scenario": "pipelined-1k",
+      "lane": "thunder",
+      "depth": 1000,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 4000,
+          "elapsed_secs": 0.0256034,
+          "p50_us": 11520.0,
+          "p99_us": 22743.699999999997,
+          "qps": 156229.2508026278
+        },
+        {
+          "ops": 4000,
+          "elapsed_secs": 0.027535,
+          "p50_us": 9712.3,
+          "p99_us": 23126.7,
+          "qps": 145269.6568004358
+        }
+      ],
+      "p50_us": {
+        "min": 9712.3,
+        "mean": 10616.15,
+        "max": 11520.0
+      },
+      "p99_us": {
+        "min": 22743.699999999997,
+        "mean": 22935.199999999997,
+        "max": 23126.7
+      },
+      "qps": {
+        "min": 145269.6568004358,
+        "mean": 150749.4538015318,
+        "max": 156229.2508026278
+      },
+      "bytes_in_per_op": 85.0,
+      "bytes_out_per_op": 83.0
+    },
+    {
+      "scenario": "pipelined-1k",
+      "lane": "http",
+      "depth": 1000,
+      "connections": 1,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 1000,
+          "elapsed_secs": 0.0085253,
+          "p50_us": 1400.2,
+          "p99_us": 2016.2,
+          "qps": 117297.92499970677
+        },
+        {
+          "ops": 1000,
+          "elapsed_secs": 0.0092491,
+          "p50_us": 764.8000000000001,
+          "p99_us": 1359.1,
+          "qps": 108118.62775837649
+        }
+      ],
+      "p50_us": {
+        "min": 764.8000000000001,
+        "mean": 1082.5,
+        "max": 1400.2
+      },
+      "p99_us": {
+        "min": 1359.1,
+        "mean": 1687.65,
+        "max": 2016.2
+      },
+      "qps": {
+        "min": 108118.62775837649,
+        "mean": 112708.27637904164,
+        "max": 117297.92499970677
+      },
+      "bytes_in_per_op": 181.0,
+      "bytes_out_per_op": 158.0
+    },
+    {
+      "scenario": "pipelined-1k",
+      "lane": "http",
+      "depth": 1000,
+      "connections": 4,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 4000,
+          "elapsed_secs": 0.0203396,
+          "p50_us": 2246.0,
+          "p99_us": 4603.5,
+          "qps": 196660.7012920608
+        },
+        {
+          "ops": 4000,
+          "elapsed_secs": 0.0218921,
+          "p50_us": 2447.6,
+          "p99_us": 6370.599999999999,
+          "qps": 182714.31246888146
+        }
+      ],
+      "p50_us": {
+        "min": 2246.0,
+        "mean": 2346.8,
+        "max": 2447.6
+      },
+      "p99_us": {
+        "min": 4603.5,
+        "mean": 5487.049999999999,
+        "max": 6370.599999999999
+      },
+      "qps": {
+        "min": 182714.31246888146,
+        "mean": 189687.50688047113,
+        "max": 196660.7012920608
+      },
+      "bytes_in_per_op": 181.0,
+      "bytes_out_per_op": 158.0
+    },
+    {
+      "scenario": "connection-storm",
+      "lane": "thunder",
+      "depth": 1,
+      "connections": 256,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.1151491,
+          "p50_us": 382.59999999999997,
+          "p99_us": 782.0,
+          "qps": 2223.204523526454
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.1244575,
+          "p50_us": 389.8,
+          "p99_us": 606.4,
+          "qps": 2056.9270634553964
+        }
+      ],
+      "p50_us": {
+        "min": 382.59999999999997,
+        "mean": 386.2,
+        "max": 389.8
+      },
+      "p99_us": {
+        "min": 606.4,
+        "mean": 694.2,
+        "max": 782.0
+      },
+      "qps": {
+        "min": 2056.9270634553964,
+        "mean": 2140.065793490925,
+        "max": 2223.204523526454
+      },
+      "bytes_in_per_op": 12.0,
+      "bytes_out_per_op": 20.0
+    },
+    {
+      "scenario": "connection-storm",
+      "lane": "http",
+      "depth": 1,
+      "connections": 256,
+      "status": "ok",
+      "reps": [
+        {
+          "ops": 256,
+          "elapsed_secs": 0.1084874,
+          "p50_us": 366.1,
+          "p99_us": 576.4,
+          "qps": 2359.7210367286893
+        },
+        {
+          "ops": 256,
+          "elapsed_secs": 0.1090338,
+          "p50_us": 367.2,
+          "p99_us": 549.3,
+          "qps": 2347.8957901127906
+        }
+      ],
+      "p50_us": {
+        "min": 366.1,
+        "mean": 366.65,
+        "max": 367.2
+      },
+      "p99_us": {
+        "min": 549.3,
+        "mean": 562.8499999999999,
+        "max": 576.4
+      },
+      "qps": {
+        "min": 2347.8957901127906,
+        "mean": 2353.80841342074,
+        "max": 2359.7210367286893
+      },
+      "bytes_in_per_op": 115.0,
+      "bytes_out_per_op": 98.0
+    }
+  ]
+}

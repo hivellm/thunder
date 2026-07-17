@@ -1,6 +1,6 @@
 [package]
 name = "thunder-bench"
-description = "Transport shootout harness - Thunder vs RESP3 vs Bolt vs HTTP (placeholder until DAG T1.6)"
+description = "Transport shootout harness - no-op backend, Thunder + HTTP listeners, parity drivers, committed artifacts (SPEC-007; skeleton scope of DAG T1.6)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,12 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-thunder-wire = { path = "../thunder-wire", version = "0.1.0" }
+thunder-wire = { path = "../thunder-wire", version = "0.1.0", features = ["tokio"] }
+thunder-server = { path = "../thunder-server", version = "0.1.0" }
+thunder-client = { path = "../thunder-client", version = "0.1.0" }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+serde = { workspace = true }
+serde_json = "1"
 
 [lints]
 workspace = true

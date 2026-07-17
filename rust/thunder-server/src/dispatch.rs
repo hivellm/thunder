@@ -57,7 +57,7 @@ pub enum AuthError {
 
 /// Product integration is exactly this trait (SRV-020).
 ///
-/// Declared with return-position `impl Future + Send` so implementors can
+/// Declared with return-position `impl Future + Send` so implementers can
 /// write plain `async fn` (no `async-trait` dependency) while the listener
 /// can still spawn dispatch futures onto the runtime. The listener is
 /// generic over `D: Dispatch`, so object safety is not required.

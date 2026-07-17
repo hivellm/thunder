@@ -22,7 +22,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde_yaml = "0.9"
 # TST-030: the family's shipping reference implementation, used by
 # tests/cross_decode.rs to pin Thunder to the reference, not to itself.
-nexus-protocol = { path = "E:/HiveLLM/Nexus/crates/nexus-protocol" }
+nexus-protocol = "2.5"
 
 [lints]
 workspace = true

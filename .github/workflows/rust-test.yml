@@ -12,6 +12,9 @@ env:
 jobs:
   rust-tests:
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]

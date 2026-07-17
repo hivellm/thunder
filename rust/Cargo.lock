@@ -642,6 +642,8 @@ dependencies = [
 [[package]]
 name = "nexus-protocol"
 version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7dc689c95abd8c0cb0cac2ce20116082e9612918a3d7e36003f5b5f1c07dd11"
 dependencies = [
  "anyhow",
  "hyper",

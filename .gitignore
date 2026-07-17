@@ -26,3 +26,15 @@ tmp/
 
 CLAUDE.local.md
 .rulebook/backup/
+
+# Build artifacts
+rust/target/
+target/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+csharp/**/bin/
+csharp/**/obj/

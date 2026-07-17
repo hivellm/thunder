@@ -1,17 +1,17 @@
 //! In-crate integration suite (SRV-050), un-gated: a real TCP listener, a
-//! test dispatch, and the raw `thunder_wire` codec as the client.
+//! test dispatch, and the raw `crate::wire` codec as the client.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use thunder_wire::profile::{
+use crate::wire::profile::{
     ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy, TlsPolicy,
 };
-use thunder_wire::{encode_frame, read_response, Request, Response, Value, PUSH_ID};
+use crate::wire::{encode_frame, read_response, Request, Response, Value, PUSH_ID};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
-use crate::{
+use crate::server::{
     spawn_listener, AuthError, Credentials, Dispatch, ListenerConfig, ListenerHandle, Principal,
     PushSender, ServerInfo, Session, NOAUTH, WRONGPASS,
 };
@@ -526,10 +526,10 @@ async fn stop_drains_in_flight_requests_before_closing() {
 #[test]
 fn error_helpers_format_the_family_conventions() {
     assert_eq!(
-        crate::format_bracket_code("not_found", "no such collection"),
+        crate::server::format_bracket_code("not_found", "no such collection"),
         "[not_found] no such collection"
     );
-    assert_eq!(crate::format_err("boom"), "ERR boom");
+    assert_eq!(crate::server::format_err("boom"), "ERR boom");
     assert!(NOAUTH.starts_with("NOAUTH "));
     assert!(WRONGPASS.starts_with("WRONGPASS "));
 }

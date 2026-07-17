@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::DEFAULT_MAX_FRAME_BYTES;
+use crate::wire::DEFAULT_MAX_FRAME_BYTES;
 
 /// Errors from the sync decoder.
 #[derive(Debug, thiserror::Error)]
@@ -80,8 +80,8 @@ mod tokio_io {
     use serde::{Deserialize, Serialize};
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-    use crate::value::{Request, Response};
-    use crate::DEFAULT_MAX_FRAME_BYTES;
+    use crate::wire::value::{Request, Response};
+    use crate::wire::DEFAULT_MAX_FRAME_BYTES;
 
     /// Read one frame; returns the decoded value and the frame size in
     /// bytes (`4 + body` — the metrics input, SRV-007). The cap is checked
@@ -141,7 +141,7 @@ mod tokio_io {
         writer: &mut W,
         msg: &T,
     ) -> io::Result<usize> {
-        let frame = crate::frame::encode_frame(msg)
+        let frame = crate::wire::frame::encode_frame(msg)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         writer.write_all(&frame).await?;
         Ok(frame.len())
@@ -174,8 +174,8 @@ pub use tokio_io::{
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::value::{Request, Response, Value};
-    use crate::PUSH_ID;
+    use crate::wire::value::{Request, Response, Value};
+    use crate::wire::PUSH_ID;
 
     fn hex(bytes: &[u8]) -> String {
         bytes

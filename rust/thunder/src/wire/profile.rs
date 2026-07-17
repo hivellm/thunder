@@ -8,7 +8,7 @@
 //! construction stays public (PRO-020): new products never wait for a
 //! Thunder release.
 
-use crate::DEFAULT_MAX_FRAME_BYTES;
+use crate::wire::DEFAULT_MAX_FRAME_BYTES;
 
 /// Handshake style (PRO-001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

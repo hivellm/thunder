@@ -37,13 +37,13 @@ use tokio::net::TcpStream;
 use tokio::sync::{oneshot, Mutex as TokioMutex, Semaphore};
 use tokio::task::JoinHandle;
 
-use thunder_wire::profile::{Handshake, HelloStyle, PushPolicy};
-use thunder_wire::{
+use crate::wire::profile::{Handshake, HelloStyle, PushPolicy};
+use crate::wire::{
     read_response_with_limit, write_request, Profile, Request, Response, Value, PUSH_ID,
 };
 
-use crate::endpoint::{parse_endpoint, Endpoint};
-use crate::error::ClientError;
+use crate::client::endpoint::{parse_endpoint, Endpoint};
+use crate::client::error::ClientError;
 
 /// Reconnect backoff: first re-dial retries after `BACKOFF_BASE`, doubling
 /// up to `BACKOFF_CAP` (CLT-030 "capped backoff").

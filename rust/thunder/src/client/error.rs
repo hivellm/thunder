@@ -7,7 +7,7 @@
 //! user code branch on the class and `code`, never on message text
 //! (CLT-052).
 
-use thunder_wire::profile::ErrorConvention;
+use crate::wire::profile::ErrorConvention;
 
 /// The stable error classes of the client contract (CLT-050).
 ///

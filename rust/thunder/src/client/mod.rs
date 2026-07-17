@@ -6,9 +6,9 @@
 //! policy, frame cap, in-flight bound, and error-string convention.
 //!
 //! ```no_run
-//! use thunder_client::{Client, ClientConfig, Profile, Value};
+//! use thunder::{Client, ClientConfig, Profile, Value};
 //!
-//! # async fn demo() -> Result<(), thunder_client::ClientError> {
+//! # async fn demo() -> Result<(), thunder::ClientError> {
 //! let config = ClientConfig::new().api_key("secret").client_name("demo");
 //! let client = Client::connect_with("vectorizer://localhost", Profile::vectorizer(), config)
 //!     .await?;
@@ -24,13 +24,14 @@
 //! [`ClientError`] are stable public API (CLT-052) — branch on the class
 //! and `code`, never on message text.
 
-mod client;
+mod conn;
 mod endpoint;
 mod error;
 
-pub use client::{Client, ClientConfig, Credentials, HandshakeInfo};
+pub use conn::{Client, ClientConfig, Credentials, HandshakeInfo};
 pub use endpoint::{parse_endpoint, Endpoint};
 pub use error::ClientError;
 
-pub use thunder_wire as wire;
-pub use thunder_wire::{Profile, Value};
+// The wire layer lives at `thunder::wire`; re-export the two types that
+// surface in this module's public API for ergonomics.
+pub use crate::wire::{Profile, Value};

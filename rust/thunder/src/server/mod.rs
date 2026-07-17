@@ -1,7 +1,7 @@
 //! Thunder RPC server — the one listener every family server derives from.
 //!
 //! Products integrate by implementing [`Dispatch`] (SRV-020) and calling
-//! [`spawn_listener`] with their [`Profile`](thunder_wire::Profile);
+//! [`spawn_listener`] with their [`Profile`](crate::wire::Profile);
 //! everything else is Thunder's:
 //!
 //! - lifecycle — accept loop, per-connection writer task, graceful drain,
@@ -28,8 +28,6 @@ pub use errors::{format_bracket_code, format_err, NOAUTH, WRONGPASS};
 pub use listener::{spawn_listener, ListenerConfig, ListenerHandle, ServerInfo};
 pub use metrics::MetricsSnapshot;
 pub use session::{PushClosed, PushSender, Session};
-
-pub use thunder_wire as wire;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]

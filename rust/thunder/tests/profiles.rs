@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use serde::Deserialize;
-use thunder_wire::profile::{
+use thunder::wire::profile::{
     ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy, TlsPolicy,
 };
 

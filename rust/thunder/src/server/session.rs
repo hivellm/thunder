@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use thunder_wire::{Response, Value, PUSH_ID};
+use crate::wire::{Response, Value, PUSH_ID};
 use tokio::sync::mpsc;
 
-use crate::dispatch::Principal;
+use crate::server::dispatch::Principal;
 
 /// One job for the connection's writer task (SRV-002).
 ///

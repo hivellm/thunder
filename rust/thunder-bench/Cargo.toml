@@ -8,9 +8,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-thunder-wire = { path = "../thunder-wire", version = "0.1.0", features = ["tokio"] }
-thunder-server = { path = "../thunder-server", version = "0.1.0" }
-thunder-client = { path = "../thunder-client", version = "0.1.0" }
+# One dependency now — the whole stack behind the default client+server features.
+thunder = { path = "../thunder", version = "0.1.0" }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 serde = { workspace = true }
 serde_json = "1"

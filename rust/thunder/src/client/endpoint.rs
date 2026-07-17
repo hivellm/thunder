@@ -9,9 +9,9 @@
 //! Parse failures use the [`ClientError::Connection`] class — an endpoint
 //! that cannot be parsed is an endpoint that cannot be dialed.
 
-use thunder_wire::Profile;
+use crate::wire::Profile;
 
-use crate::error::ClientError;
+use crate::client::error::ClientError;
 
 /// A resolved RPC endpoint: host plus concrete port.
 #[derive(Debug, Clone, PartialEq, Eq)]

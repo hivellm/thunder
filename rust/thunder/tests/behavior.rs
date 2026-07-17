@@ -13,11 +13,9 @@ use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpListener;
 
-use thunder_client::wire::profile::{
-    ErrorConvention, Handshake, HelloStyle, PushPolicy, TlsPolicy,
-};
-use thunder_client::wire::{read_request_with_limit, write_response, Request, Response, PUSH_ID};
-use thunder_client::{Client, ClientConfig, ClientError, Profile, Value};
+use thunder::wire::profile::{ErrorConvention, Handshake, HelloStyle, PushPolicy, TlsPolicy};
+use thunder::wire::{read_request_with_limit, write_response, Request, Response, PUSH_ID};
+use thunder::{Client, ClientConfig, ClientError, Profile, Value};
 
 /// Frame cap the loopback responders read with.
 const SRV_CAP: usize = 1024 * 1024;

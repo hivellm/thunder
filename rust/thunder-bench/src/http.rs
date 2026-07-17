@@ -26,7 +26,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use thunder_wire::Value;
+use thunder::wire::Value;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
@@ -35,7 +35,7 @@ use tokio::sync::{mpsc, watch};
 use crate::backend::NoopBackend;
 
 /// Cap on one request body — mirrors the Thunder frame cap (WIRE-020).
-const MAX_HTTP_BODY: usize = thunder_wire::DEFAULT_MAX_FRAME_BYTES;
+const MAX_HTTP_BODY: usize = thunder::wire::DEFAULT_MAX_FRAME_BYTES;
 
 /// Cap on one request/response head.
 const MAX_HTTP_HEAD: usize = 16 * 1024;
@@ -81,7 +81,7 @@ pub struct HttpMetricsSnapshot {
 }
 
 /// Handle to the running HTTP listener — same shape as
-/// [`thunder_server::ListenerHandle`].
+/// [`thunder::server::ListenerHandle`].
 #[derive(Debug)]
 pub struct HttpHandle {
     local_addr: SocketAddr,

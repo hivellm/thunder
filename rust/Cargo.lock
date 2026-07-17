@@ -1265,37 +1265,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "thunder-bench"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thunder-client",
- "thunder-server",
- "thunder-wire",
- "tokio",
-]
-
-[[package]]
-name = "thunder-client"
-version = "0.1.0"
-dependencies = [
- "thiserror 2.0.18",
- "thunder-wire",
- "tokio",
-]
-
-[[package]]
-name = "thunder-server"
-version = "0.1.0"
-dependencies = [
- "thiserror 2.0.18",
- "thunder-wire",
- "tokio",
-]
-
-[[package]]
-name = "thunder-wire"
+name = "thunder"
 version = "0.1.0"
 dependencies = [
  "nexus-protocol",
@@ -1304,6 +1274,16 @@ dependencies = [
  "serde_bytes",
  "serde_yaml",
  "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "thunder-bench"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thunder",
  "tokio",
 ]
 

@@ -4,7 +4,7 @@
 //!
 //! - continuous pipelining, no inter-batch gaps (the Synap `-P 16`
 //!   lesson): the Thunder lane keeps `depth` concurrent callers per
-//!   connection multiplexed over [`thunder_client::Client`]; the HTTP lane
+//!   connection multiplexed over [`thunder::client::Client`]; the HTTP lane
 //!   keeps a FIFO pipeline window of `depth` requests on each keep-alive
 //!   connection — in both lanes the next request is issued the moment a
 //!   slot frees, never after a batch barrier;
@@ -28,12 +28,12 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use thunder_client::Client;
-use thunder_server::{spawn_listener, ListenerConfig, ListenerHandle, ServerInfo};
-use thunder_wire::profile::{
+use thunder::client::Client;
+use thunder::server::{spawn_listener, ListenerConfig, ListenerHandle, ServerInfo};
+use thunder::wire::profile::{
     ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy, TlsPolicy,
 };
-use thunder_wire::Value;
+use thunder::wire::Value;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
@@ -55,7 +55,7 @@ pub const fn bench_profile() -> Profile {
         handshake: Handshake::None,
         hello_style: HelloStyle::NotUsed,
         push: PushPolicy::Reserved,
-        max_frame_bytes: thunder_wire::DEFAULT_MAX_FRAME_BYTES,
+        max_frame_bytes: thunder::wire::DEFAULT_MAX_FRAME_BYTES,
         max_in_flight: 4096,
         error_codes: ErrorConvention::None,
         tls: TlsPolicy::Off,

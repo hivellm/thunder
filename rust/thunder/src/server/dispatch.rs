@@ -8,9 +8,9 @@
 
 use std::future::Future;
 
-use thunder_wire::Value;
+use crate::wire::Value;
 
-use crate::session::Session;
+use crate::server::session::Session;
 
 /// Credentials parsed by Thunder from `HELLO`/`AUTH` payloads (SRV-012).
 ///

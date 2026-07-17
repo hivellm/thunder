@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 
 use serde::Deserialize;
-use thunder_wire::{
+use thunder::wire::{
     decode_frame_with_limit, encode_frame, DecodeError, Request, Response, Value,
     DEFAULT_MAX_FRAME_BYTES,
 };

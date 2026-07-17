@@ -19,7 +19,7 @@
 //!
 //! | Lane | Listener |
 //! |---|---|
-//! | `thunder` | [`thunder_server::spawn_listener`] over the no-op backend |
+//! | `thunder` | [`thunder::server::spawn_listener`] over the no-op backend |
 //! | `http` | hand-rolled minimal HTTP/1.1 + JSON ([`http`]) over the same backend |
 //!
 //! RESP3 and Bolt lanes land at T4.2, together with the full connection
@@ -44,4 +44,4 @@ pub mod scenarios;
 pub mod stats;
 
 pub use driver::bench_profile;
-pub use thunder_wire as wire;
+pub use thunder::wire;

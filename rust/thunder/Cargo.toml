@@ -1,6 +1,6 @@
 [package]
-name = "thunder-wire"
-description = "HiveLLM binary RPC wire layer - value model, Request/Response, length-prefixed MessagePack frame codec (wire v1, frozen)"
+name = "thunder"
+description = "HiveLLM binary RPC — one crate: wire codec (v1, frozen), multiplexed client, and the family server hot path, behind features (SPEC-001/003/004)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,8 +14,14 @@ thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [features]
-default = []
+# The wire layer is always compiled. `client` and `server` are additive and
+# each pull in the async runtime; both are on by default so `cargo add thunder`
+# gives the whole stack. A client-only SDK sets `default-features = false,
+# features = ["client"]`; a server does likewise with ["server"].
+default = ["client", "server"]
 tokio = ["dep:tokio"]
+client = ["tokio"]
+server = ["tokio"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

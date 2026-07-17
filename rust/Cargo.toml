@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["thunder-wire", "thunder-client", "thunder-server", "thunder-bench"]
+members = ["thunder", "thunder-bench"]
 
 [workspace.package]
 version = "0.1.0"

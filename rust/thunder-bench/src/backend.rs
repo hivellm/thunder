@@ -14,8 +14,8 @@
 //! listener (through [`Dispatch`]) and the HTTP lane, so the two lanes can
 //! never diverge on semantics.
 
-use thunder_server::{AuthError, Credentials, Dispatch, Principal, Session};
-use thunder_wire::Value;
+use thunder::server::{AuthError, Credentials, Dispatch, Principal, Session};
+use thunder::wire::Value;
 
 /// Size of the fixed `STATIC` reply — the medium-4KiB scenario's payload.
 pub const STATIC_REPLY_BYTES: usize = 4096;

@@ -21,7 +21,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use thunder_wire::{decode_frame, encode_frame, Request, Response, Value};
+use thunder::wire::{decode_frame, encode_frame, Request, Response, Value};
 
 const SEEDS: u64 = 200;
 const MAX_DEPTH: u32 = 3;

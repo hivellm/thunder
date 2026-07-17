@@ -15,17 +15,17 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use thunder_wire::profile::{ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy};
-use thunder_wire::{encode_frame, read_request_with_limit, Request, Response, Value, PUSH_ID};
+use crate::wire::profile::{ErrorConvention, Handshake, HelloStyle, Profile, PushPolicy};
+use crate::wire::{encode_frame, read_request_with_limit, Request, Response, Value, PUSH_ID};
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch, Semaphore};
 
-use crate::dispatch::{AuthError, Credentials, Dispatch};
-use crate::errors::{format_bracket_code, format_err, NOAUTH, WRONGPASS};
-use crate::metrics::{Metrics, MetricsSnapshot};
-use crate::session::{PushSender, Session, WriteJob};
+use crate::server::dispatch::{AuthError, Credentials, Dispatch};
+use crate::server::errors::{format_bracket_code, format_err, NOAUTH, WRONGPASS};
+use crate::server::metrics::{Metrics, MetricsSnapshot};
+use crate::server::session::{PushSender, Session, WriteJob};
 
 /// Wire protocol version advertised in HELLO replies (WIRE-004: v1,
 /// frozen — adding commands or profiles never bumps it).

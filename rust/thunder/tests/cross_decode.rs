@@ -18,7 +18,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use nexus_protocol::rpc as nexus;
-use thunder_wire::{decode_frame, encode_frame, Request, Response, Value};
+use thunder::wire::{decode_frame, encode_frame, Request, Response, Value};
 
 // ── Structural bridges ───────────────────────────────────────────────────────
 

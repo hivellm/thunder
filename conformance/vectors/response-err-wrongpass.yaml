@@ -6,4 +6,4 @@ decoded:
   kind: response
   id: 9
   err: "WRONGPASS invalid username-password pair or user is disabled."
-notes: "Nexus/Redis-style WRONGPASS prefix preserved verbatim. Covers WIRE-040."
+notes: "RESP3-style WRONGPASS prefix preserved verbatim. Covers WIRE-040."

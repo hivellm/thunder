@@ -6,4 +6,4 @@ decoded:
   kind: response
   id: 9
   err: "[collection_not_found] no such collection: docs"
-notes: "Vectorizer/Lexum \"[code] message\" convention travels as an opaque string (str8 d9 - 47 bytes exceeds fixstr). Covers WIRE-040."
+notes: "The bracket-code \"[code] message\" convention travels as an opaque string (str8 d9 - 47 bytes exceeds fixstr); the wire never interprets it, the client does (PRO-014). Covers WIRE-040."

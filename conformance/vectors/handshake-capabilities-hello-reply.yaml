@@ -1,4 +1,4 @@
-name: handshake-vectorizer-hello-reply
+name: handshake-capabilities-hello-reply
 group: handshake
 mode: bidirectional
 frame_hex: "5c 00 00 00 92 01 81 a2 4f 6b 81 a3 4d 61 70 92 92 81 a3 53 74 72 b0 70 72 6f 74 6f 63 6f 6c 5f 76 65 72 73 69 6f 6e 81 a3 49 6e 74 01 92 81 a3 53 74 72 ac 63 61 70 61 62 69 6c 69 74 69 65 73 81 a5 41 72 72 61 79 92 81 a3 53 74 72 a6 73 65 61 72 63 68 81 a3 53 74 72 a6 69 6e 73 65 72 74"
@@ -14,4 +14,4 @@ decoded:
           value:
             - { type: str, value: search }
             - { type: str, value: insert }
-notes: "Vectorizer HELLO capabilities reply {protocol_version, capabilities: [Str...]} (SRV-014 builds it from the capabilities hook). Covers WIRE-004; shape pinned by SPEC-002 PRO-001."
+notes: "The capabilities HELLO reply shape (HelloStyle::MapPayload) - THE standard: {protocol_version, capabilities: [Str...]}, built by SRV-014 from the application's capabilities hook. This is the shape that lets the protocol evolve: it negotiates proto and advertises what the peer can do. Covers WIRE-004; shape pinned by SPEC-002 PRO-001."

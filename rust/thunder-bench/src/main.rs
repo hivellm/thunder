@@ -24,6 +24,10 @@ OPTIONS:
     --warmup <n>             discarded warmup ops per cell (default: 200)
     --reps <n>               repetitions per cell, >= 1 (default: 3)
     --label <name>           artifact file stem (default: run-<unix-timestamp>)
+    --serve-resp3 <port>     BEN-003 calibration: serve the RESP3 lane on
+                             0.0.0.0:<port> until killed, so an external
+                             client (redis-benchmark) can drive the very same
+                             listener the matrix measures. Runs no matrix.
     --help                   print this help
 
 SCENARIOS:
@@ -35,6 +39,7 @@ struct Args {
     out: PathBuf,
     cfg: RunConfig,
     label: Option<String>,
+    serve_resp3: Option<u16>,
     help: bool,
 }
 
@@ -45,6 +50,7 @@ impl Default for Args {
             out: PathBuf::from("bench-out"),
             cfg: RunConfig::default(),
             label: None,
+            serve_resp3: None,
             help: false,
         }
     }
@@ -60,6 +66,9 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Args, String> {
             "--warmup" => args.cfg.warmup = need_number(&mut argv, "--warmup", 0)?,
             "--reps" => args.cfg.repetitions = need_number(&mut argv, "--reps", 1)?,
             "--label" => args.label = Some(need_value(&mut argv, "--label")?),
+            "--serve-resp3" => {
+                args.serve_resp3 = Some(need_number(&mut argv, "--serve-resp3", 1)? as u16)
+            }
             "--help" | "-h" => args.help = true,
             other => return Err(format!("unknown flag '{other}'\n\n{USAGE}")),
         }
@@ -100,6 +109,9 @@ fn main() -> ExitCode {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
+    if let Some(port) = args.serve_resp3 {
+        return serve_resp3(port);
+    }
     let selected = match scenarios::select(&args.scenario) {
         Ok(selected) => selected,
         Err(message) => {
@@ -134,6 +146,52 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// BEN-003 calibration mode: serve the RESP3 lane on `0.0.0.0:<port>` until
+/// killed, over the very same [`NoopBackend`] the matrix uses.
+///
+/// This exists so `redis-benchmark` can drive **the exact listener the matrix
+/// measures**, on the same host and allocator — the only way its qps is
+/// comparable to this harness's own driver at matching `-P`/`-c`. Binding
+/// `0.0.0.0` (not loopback) is deliberate: the calibration client runs in a
+/// container and reaches the host from outside.
+fn serve_resp3(port: u16) -> ExitCode {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("error: failed to start the tokio runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    runtime.block_on(async move {
+        let backend = std::sync::Arc::new(thunder_bench::backend::NoopBackend::new());
+        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+        let handle = match thunder_bench::resp3::spawn_resp3_listener(backend, addr).await {
+            Ok(handle) => handle,
+            Err(e) => {
+                eprintln!("error: cannot bind {addr}: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        println!("RESP3 calibration listener ready on {}", handle.local_addr());
+        println!("drive it, e.g.: redis-benchmark -h <host> -p {port} -t ping_mbulk -P 16 -c 4 -n 100000");
+        println!("press Ctrl-C to stop and print the server-side counters");
+        if tokio::signal::ctrl_c().await.is_err() {
+            eprintln!("warning: could not listen for Ctrl-C; serving until killed");
+            std::future::pending::<()>().await;
+        }
+        let snap = handle.snapshot();
+        println!(
+            "server-side counters: requests={} bytes_in={} bytes_out={}",
+            snap.requests, snap.bytes_in, snap.bytes_out
+        );
+        handle.stop().await;
+        ExitCode::SUCCESS
+    })
 }
 
 async fn run(args: &Args, selected: &[&'static Scenario]) -> Result<(PathBuf, PathBuf), String> {

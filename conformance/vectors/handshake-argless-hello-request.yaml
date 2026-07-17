@@ -1,0 +1,10 @@
+name: handshake-argless-hello-request
+group: handshake
+mode: bidirectional
+frame_hex: "09 00 00 00 93 01 a5 48 45 4c 4c 4f 90"
+decoded:
+  kind: request
+  id: 1
+  command: HELLO
+  args: []
+notes: "The arg-less HELLO request shape (HelloStyle::ArgLess), used under an AuthCommand handshake: HELLO takes NO arguments and is answered with a metadata Map. This vector once pinned a positional [Int(1)] payload - that belongs to RESP3, a different surface (BN-023 errata). Credentials never ride in this HELLO; they travel via AUTH. Bytes generated from the reference encoder. Covers WIRE-004; shape pinned by SPEC-002 PRO-001."

@@ -7,4 +7,4 @@ decoded:
   id: 1
   command: PING
   args: []
-notes: "Family-pinned canonical vector (VECTORIZER_RPC.md §11). Covers WIRE-001, WIRE-012."
+notes: "The canonical PING request - the family's pinned reference frame, unchanged since wire v1 froze. Covers WIRE-001, WIRE-012."

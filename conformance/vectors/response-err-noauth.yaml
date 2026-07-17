@@ -6,4 +6,4 @@ decoded:
   kind: response
   id: 9
   err: "NOAUTH Authentication required."
-notes: "Nexus/Redis-style NOAUTH prefix preserved verbatim; interpretation is a profile-driven client concern. Covers WIRE-040."
+notes: "RESP3-style NOAUTH prefix preserved verbatim; interpretation is a config-driven client concern (PRO-014). Covers WIRE-040."

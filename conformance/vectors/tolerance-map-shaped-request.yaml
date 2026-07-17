@@ -8,4 +8,4 @@ decoded:
   command: GET
   args:
     - { type: str, value: key }
-notes: "Synap Python/Go/Java <=1.x legacy: Request as a named map {\"id\":7,\"command\":\"GET\",\"args\":[...]} decodes; canonical emission is the array-encoded struct. Generated with rmp_serde::to_vec_named. Tolerance is frozen within 1.x. Covers WIRE-013, WIRE-016."
+notes: "Pre-v1 encoder legacy: Request as a named map {\"id\":7,\"command\":\"GET\",\"args\":[...]} decodes; canonical emission is the array-encoded struct. Bytes generated with rmp_serde::to_vec_named. Tolerance is frozen within 1.x. Covers WIRE-013, WIRE-016."

@@ -13,6 +13,10 @@
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/hivellm/thunder</RepositoryUrl>
+    <!-- RepositoryUrl feeds the nuspec's <repository> element; the package
+         page's "Project website" link comes from PackageProjectUrl, which is a
+         separate field. Without it the listing has no link out. -->
+    <PackageProjectUrl>https://github.com/hivellm/thunder</PackageProjectUrl>
     <PackageTags>rpc;messagepack;hivellm;thunder</PackageTags>
     <IsPackable>true</IsPackable>
   </PropertyGroup>

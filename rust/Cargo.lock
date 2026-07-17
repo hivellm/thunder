@@ -222,14 +222,18 @@ dependencies = [
 name = "thunder-client"
 version = "0.1.0"
 dependencies = [
+ "thiserror",
  "thunder-wire",
+ "tokio",
 ]
 
 [[package]]
 name = "thunder-server"
 version = "0.1.0"
 dependencies = [
+ "thiserror",
  "thunder-wire",
+ "tokio",
 ]
 
 [[package]]

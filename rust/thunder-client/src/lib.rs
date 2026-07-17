@@ -1,8 +1,36 @@
-//! Thunder RPC client — multiplexed, profile-driven.
+//! Thunder RPC client — multiplexed, profile-driven (SPEC-003, `CLT-xxx`).
 //!
-//! Skeleton crate: the client contract is specified in
-//! `docs/specs/SPEC-003-client.md` and lands at DAG task T1.4
-//! (`phase1_thunder-client`). The wire layer it will consume is
-//! [`thunder_wire`].
+//! One [`Client`] owns one TCP connection and multiplexes concurrent
+//! calls over it via a background reader task (CLT-001/010). Behavior is
+//! driven entirely by a [`Profile`] (SPEC-002): handshake style, push
+//! policy, frame cap, in-flight bound, and error-string convention.
+//!
+//! ```no_run
+//! use thunder_client::{Client, ClientConfig, Profile, Value};
+//!
+//! # async fn demo() -> Result<(), thunder_client::ClientError> {
+//! let config = ClientConfig::new().api_key("secret").client_name("demo");
+//! let client = Client::connect_with("vectorizer://localhost", Profile::vectorizer(), config)
+//!     .await?;
+//! let pong = client.call("PING", vec![]).await?;
+//! assert_eq!(pong.as_str(), Some("PONG"));
+//! client.close().await;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! The semantics here are the family's "uniform floor" (PRD NFR-07): the
+//! same contract ships in TypeScript, Python, and C#. Error classes on
+//! [`ClientError`] are stable public API (CLT-052) — branch on the class
+//! and `code`, never on message text.
+
+mod client;
+mod endpoint;
+mod error;
+
+pub use client::{Client, ClientConfig, Credentials, HandshakeInfo};
+pub use endpoint::{parse_endpoint, Endpoint};
+pub use error::ClientError;
 
 pub use thunder_wire as wire;
+pub use thunder_wire::{Profile, Value};

@@ -16,7 +16,7 @@ not "build RPC auth" (BN-017/BN-023).
 ## What Changes
 Implement the canonical HELLO handshake as a first-class, optional capability in the shared stack
 (SPEC-008 handshake section, SPEC-004 SRV-014, SPEC-003 CLT-002):
-- **rust/thunder-server dual-accept**: on a fresh connection accept EITHER a leading canonical
+- **thunder::server dual-accept**: on a fresh connection accept EITHER a leading canonical
   `HELLO` map (negotiate `proto`, reply with a capabilities Map) OR a legacy first frame (per the
   profile: Nexus optional-HELLO+`AUTH` allowlist; Synap immediate/`AUTH`), disambiguated by the
   first frame's command — no ambiguity. Auth enforcement stays the deployment toggle
@@ -25,7 +25,7 @@ Implement the canonical HELLO handshake as a first-class, optional capability in
 - **HELLO credential mapping**: the HELLO map's `token`/`api_key`/`[user,pass]` fields feed the same
   verification a product already runs (Nexus `AUTH` handler; Synap shared `UserManager`) — no new
   auth subsystem.
-- **rust/thunder-client + the three client packages**: able to lead with the canonical HELLO map
+- **thunder::client + the three client packages**: able to lead with the canonical HELLO map
   and consume the capabilities reply + negotiated `proto`; selected per profile (the existing
   CLT-002 handshake-style branch gains/confirms the canonical map form). Optional: a profile that
   keeps a legacy style still works.
@@ -38,8 +38,8 @@ manual per-product adoption, gated on telemetry — not part of this task.
 ## Impact
 - Affected specs: SPEC-008 (handshake section), SPEC-004 (SRV-014 dual-accept + capabilities reply),
   SPEC-003 (CLT-002 canonical HELLO branch)
-- Affected code: rust/thunder-server (listener handshake + dual-accept + capabilities reply hook),
-  rust/thunder-client, typescript/src/client.ts, python/thunder_rpc/{client.py,aio.py,_handshake.py},
+- Affected code: thunder::server (listener handshake + dual-accept + capabilities reply hook),
+  thunder::client, typescript/src/client.ts, python/thunder_rpc/{client.py,aio.py,_handshake.py},
   csharp/.../ThunderClient.cs; conformance/vectors/ (canonical HELLO + tolerance)
 - Breaking change: NO in Thunder — dual-accept keeps every legacy first-frame working; the canonical
   HELLO is opt-in per profile. (A product later making HELLO mandatory and cutting its legacy path

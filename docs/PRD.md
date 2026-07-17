@@ -135,7 +135,7 @@ Priority: **P0** = required for 1.0.0 · **P1** = required for the fast-follow r
 
 | ID | P | Requirement |
 |---|---|---|
-| FR-60 | P0 | Published packages: crates.io (`thunder-wire`/`thunder-client`/`thunder-server`), npm (`@hivehub/thunder`), PyPI (`hivellm-thunder`), NuGet (`HiveLLM.Thunder`) — one version per release train |
+| FR-60 | P0 | Published packages: crates.io (`thunder` — one crate; `wire` always on, `client`/`server` features), npm (`@hivehub/thunder`), PyPI (`hivellm-thunder`), NuGet (`HiveLLM.Thunder`) — one version per release train |
 | FR-61 | P0 | Dissolution of `nexus-protocol` / `vectorizer-protocol` / `synap-protocol`: terminal deprecated re-export shims published; crates removed from product workspaces; non-RPC residue (RESP3, envelope) relocated in-repo |
 | FR-62 | P0 | Product SDKs publish with zero path dependencies and no product-protocol package (`cargo publish --dry-run` proof) |
 | FR-63 | P1 | Go module `github.com/hivellm/thunder-go` |
@@ -161,7 +161,7 @@ Priority: **P0** = required for 1.0.0 · **P1** = required for the fast-follow r
 | NFR-06 | P0 | **One release train.** Products consume released registry versions only (never git paths); semver: additive = minor, tolerance removal or floor changes = major |
 | NFR-07 | P0 | **Uniform floor.** The SPEC-003 client contract holds identically in all four languages, verified by shared behavioral tests |
 | NFR-08 | P0 | Apache-2.0; HiveLLM family conventions (workspace lints, quality gate: type-check → lint → full suite) |
-| NFR-09 | P1 | Wire layer usable in constrained contexts: no tokio dependency in `thunder-wire`; TS package works in Node ≥ 18 (browser transport out of scope for 1.0) |
+| NFR-09 | P1 | Wire layer usable in constrained contexts: no tokio dependency in the `thunder::wire` layer (`thunder` with `default-features = false`); TS package works in Node ≥ 18 (browser transport out of scope for 1.0) |
 
 ## 7. Release criteria
 

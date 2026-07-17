@@ -23,7 +23,7 @@ understated the native path at pipeline depth 16).
 
   | Listener | Basis |
   |---|---|
-  | Thunder RPC | `thunder-server`, no-op dispatch |
+  | Thunder RPC | `thunder::server`, no-op dispatch |
   | RESP3 | reuse a family RESP3 implementation over the same backend |
   | Bolt | minimal Bolt v5 subset — handshake, HELLO, RUN, PULL, single-record results (PackStream encode/decode for exactly the matrix's shapes) |
   | HTTP/1.1 + JSON | axum + serde_json over the same backend |

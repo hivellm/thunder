@@ -72,7 +72,7 @@ Every Thunder client, in every language: demux by id (pipelining) · frame cap o
 
 | Language | Package | Serialization |
 |---|---|---|
-| Rust | `thunder-wire` · `thunder-client` · `thunder-server` (crates.io) | `rmp-serde` 1.x |
+| Rust | `thunder` (crates.io) — one crate; `wire` always on, `client`/`server` features (default on) | `rmp-serde` 1.x |
 | TypeScript | `@hivehub/thunder` (npm) | `@msgpack/msgpack` ^3 |
 | Python | `hivellm-thunder` (PyPI, import `thunder_rpc`) — sync **and** async clients | `msgpack` ≥1.1 |
 | C# | `HiveLLM.Thunder` (NuGet, `net8.0`) | `MessagePack` 2.5.x — low-level writer/reader only, never `Typeless` |
@@ -84,7 +84,7 @@ The per-product `-protocol` crates (`nexus-protocol`, `vectorizer-protocol`, `sy
 
 ```rust
 // Rust (planned)
-use thunder_client::{Client, Profile};
+use thunder::{Client, Profile};
 
 let client = Client::connect("127.0.0.1:15503", Profile::vectorizer())
     .token(jwt)
@@ -168,7 +168,7 @@ Full milestones: [docs/ROADMAP.md](docs/ROADMAP.md) · task graph: [docs/DAG.md]
 | [Nexus](https://github.com/hivellm/nexus) | Property graph database + vector search | Canonical **spec author**; adopts via P2 |
 | [Vectorizer](https://github.com/hivellm/vectorizer) | Vector database / semantic search | Byte-for-byte **port** + golden vectors + HELLO auth; adopts via P2 |
 | Lexum | Document / search engine | First **green-field consumer** — skips building its own protocol crate entirely |
-| Fluxum | Streaming / table sync | Reuses the **frame layer** (own envelope); optional `thunder-wire` frame adoption |
+| Fluxum | Streaming / table sync | Reuses the **frame layer** (own envelope); optional `thunder` wire-layer frame adoption |
 
 ## 🤝 Contributing
 

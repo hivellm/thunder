@@ -46,7 +46,7 @@
   wired (BN-007/BN-023) — an asset as a spec, not running code.
 - **Impact**: Vectorizer is the reference implementation of the canonical handshake — the other three
   migrate *toward* what Vectorizer already does. Its own work is: (a) confirm the shared
-  `thunder-server` handshake path reproduces its existing mandatory-HELLO behavior byte-for-byte (the
+  `thunder::server` handshake path reproduces its existing mandatory-HELLO behavior byte-for-byte (the
   corpus handshake vectors already pin the Vectorizer reply shape — SPEC-004 SRV-014, T-015); (b)
   minor error-string alignment to the pinned superset spelling. Its capabilities reply and spec'd
   TLS design become the family defaults. The once-feared ordering constraint (uniform TLS must land
@@ -75,7 +75,7 @@
   `AUTH` call. None of it is *hard code* — Thunder's server already constructs the unified HELLO reply
   covering the Nexus reply shape (`{server, version, proto, id, authenticated}`, SRV-014), and the
   HELLO map trivially carries `api_key`/`user`/`pass` fields. The cost is the **dual-accept window**
-  (§4 BN-019): Nexus's `thunder-server` keeps the optional-HELLO + `AUTH`-command path alive while
+  (§4 BN-019): Nexus's `thunder::server` keeps the optional-HELLO + `AUTH`-command path alive while
   its SDKs switch to the canonical HELLO map, then cuts the legacy path in a Nexus major once
   telemetry shows no legacy first-frames. The username/password vs api_key duality is *not* a
   blocker — both are just fields in the HELLO map — but it must be written into the canonical spec so
@@ -110,7 +110,7 @@
 - **Why it is more tractable than the registry suggests**: the expensive reading — "Synap must
   build RPC-layer authentication" — is simply **false**; the RPC loop already reaches the shared
   `UserManager`. The canonical HELLO's credential fields map 1:1 onto the existing
-  `AUTH <password>` / `<user> <password>` semantics, so Synap's `thunder-server` HELLO handler
+  `AUTH <password>` / `<user> <password>` semantics, so Synap's `thunder::server` HELLO handler
   *reuses* the verification call that exists today; enforcement stays the `require_auth` toggle (the
   shape ≠ policy split, BN-012 — which Synap itself already demonstrates in-family, exactly like
   Nexus's `auth_required`). An open deployment accepts a credential-less HELLO and keeps serving
@@ -146,7 +146,7 @@
 - **The cross-cutting dependency** (BN-022, restated as a blocker): *none of these migrations are
   cheap until the product is on Thunder.* Before the swap, "Nexus adopts mandatory HELLO" means
   editing five hand-ported Nexus transports plus the server; after the swap it means a
-  `thunder-server` dual-accept path plus a profile flip. Every per-product blocker above assumes the
+  `thunder::server` dual-accept path plus a profile flip. Every per-product blocker above assumes the
   product has completed Thunder M2/M3 — which is why normalization is sequenced as Thunder's sequel,
   not its sibling.
 - **Confidence**: high.

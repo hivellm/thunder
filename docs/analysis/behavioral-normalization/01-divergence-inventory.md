@@ -72,8 +72,8 @@ and the vocabulary**, never the **protocol behavior**.
   **around** those frames — who must authenticate and how, what an error string looks like, whether
   a server ever pushes, how big a frame may be, and whether the socket is encrypted. Normalization
   is therefore a **behavioral** project layered on Thunder's **structural** one, not a second wire
-  fork. Every dimension below lives in `thunder-client` + `thunder-server` behavior and the profile
-  that drives them, never in `thunder-wire`.
+  fork. Every dimension below lives in `thunder::client` + `thunder::server` behavior and the profile
+  that drives them, never in `thunder::wire`.
 - **Confidence**: high.
 
 ## 1.2 Dimension 1 — Handshake (the widest gap)
@@ -242,7 +242,7 @@ and the vocabulary**, never the **protocol behavior**.
 - **Impact**: two of these are not just documentation errors. (1) means a Thunder client on the
   `synap` profile **cannot authenticate against a `require_auth` Synap at all** — the `None`
   handshake branch never sends `AUTH` — a real functional gap in the profile-driven floor. (2) means
-  `thunder-client`'s AuthCommand branch would emit a HELLO shape no Nexus RPC server documents. The
+  `thunder::client`'s AuthCommand branch would emit a HELLO shape no Nexus RPC server documents. The
   fix is one coordinated commit in the Thunder repo: the three YAML cells, the corpus vector, the
   SPEC-002 PRO-001 prose, and the `Profile` constants + pinning tests in all four language packages.
   **Sequencing**: apply after the in-flight T3 packages land, so the YAMLs and every language's

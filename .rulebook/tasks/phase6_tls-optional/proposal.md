@@ -13,10 +13,10 @@ first running RPC TLS.
 Implement one optional, config/feature-gated `tokio-rustls` transport layer across the shared stack,
 off by default, no STARTTLS (TLS decided at connect time), matching SPEC-004 SRV-040 (server) and
 FR-29 (client) and the SPEC-008 TLS section:
-- **rust/thunder-server**: wrap the listener's accepted stream in a `TlsAcceptor` when
+- **thunder::server**: wrap the listener's accepted stream in a `TlsAcceptor` when
   `tls.cert_path`/`tls.key_path` are configured; feature-gate the rustls dependency; plaintext path
   unchanged when unset.
-- **rust/thunder-client**: optional TLS connector (rustls/native roots or a configured CA), opt-in
+- **thunder::client**: optional TLS connector (rustls/native roots or a configured CA), opt-in
   via endpoint/profile config; plaintext default preserved.
 - **typescript / python / csharp client packages**: a TLS connect option (Node TLS socket / Python
   `ssl` context / .NET `SslStream`) gated by client config, off by default, mirroring the Rust
@@ -28,7 +28,7 @@ routing a product SDK through it is the owner's manual per-product adoption, not
 
 ## Impact
 - Affected specs: SPEC-004 (SRV-040), SPEC-003/PRD (FR-29), SPEC-008 (TLS section)
-- Affected code: rust/thunder-server (listener), rust/thunder-client (connector),
+- Affected code: thunder::server (listener), thunder::client (connector),
   typescript/src/client.ts, python/thunder_rpc/{client.py,aio.py}, csharp/.../ThunderClient.cs;
   config structs in each; feature flags / optional deps (rustls, and the stdlib TLS in the three
   client languages)

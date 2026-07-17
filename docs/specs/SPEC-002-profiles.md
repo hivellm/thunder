@@ -68,7 +68,7 @@ data so that one module serves all of them without forks.
 
 ## 4. Server-side enforcement
 
-- **PRO-030** [P0] `thunder-server` SHALL enforce the profile: `HelloMandatory` rejects any
+- **PRO-030** [P0] `thunder::server` SHALL enforce the profile: `HelloMandatory` rejects any
   non-`HELLO` first frame with the profile's error convention; `AuthCommand` applies the pre-auth
   allowlist; `None` skips auth gating entirely.
 - **PRO-031** [P0] `push = Reserved` servers SHALL refuse client frames with `PUSH_ID` and never

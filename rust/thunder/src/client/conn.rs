@@ -738,7 +738,7 @@ async fn reader_loop(
 
 /// Map a reader I/O failure onto the stable error classes. The wire layer
 /// reports both cap violations and malformed MessagePack as
-/// `InvalidData`; the cap message is pinned by thunder-wire
+/// `InvalidData`; the cap message is pinned by thunder::wire
 /// ("… exceeds limit …", WIRE-020/021).
 fn classify_read_error(e: &std::io::Error) -> ClientError {
     if e.kind() == std::io::ErrorKind::InvalidData {

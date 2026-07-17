@@ -19,12 +19,12 @@ End state per consumer (no `-protocol` crate remains in any product workspace):
 
 | Consumer | Depends on (from the registry) | What replaces the old crate's contents |
 |---|---|---|
-| Product **server core** (Rust) | `thunder-wire` + `thunder-server` | RPC wire → Thunder. Non-RPC residue relocates in-repo: `resp3/` → a server-internal module (Nexus SDK never consumed it — its transport imports only `nexus_protocol::rpc`, `sdks/rust/src/transport/rpc.rs:11-12`; Synap's Rust SDK hand-rolls its own RESP3 parser, `transport/mod.rs`); `envelope.rs` → `synap-server` internal. Internal modules are never published. |
-| Product **Rust SDK** | `thunder-wire` + `thunder-client` | The product alias is one line in the SDK itself: `pub type NexusValue = thunder_wire::Value;` — source compatibility for SDK users without any intermediate crate. |
+| Product **server core** (Rust) | `thunder` (features `server`) | RPC wire → Thunder. Non-RPC residue relocates in-repo: `resp3/` → a server-internal module (Nexus SDK never consumed it — its transport imports only `nexus_protocol::rpc`, `sdks/rust/src/transport/rpc.rs:11-12`; Synap's Rust SDK hand-rolls its own RESP3 parser, `transport/mod.rs`); `envelope.rs` → `synap-server` internal. Internal modules are never published. |
+| Product **Rust SDK** | `thunder` (features `client`, `default-features = false`) | The product alias is one line in the SDK itself: `pub type NexusValue = thunder::Value;` — source compatibility for SDK users without any intermediate crate. |
 | Product **TS/Py/C# SDKs** | `@hivehub/thunder` / `hivellm-thunder` / `HiveLLM.Thunder` | Today's in-package transport copies are deleted (they were never separate packages — no dissolution needed, just the P3 swap). |
 | **New projects** (Lexum, …) | Thunder packages directly | The planned `lexum-protocol` is never created (T-019). |
 
-- **Impact**: a wire-touching change becomes **one release train** (Thunder's four packages, one version) instead of three protocol-then-SDK choreographies plus twelve hand-ports. Product releases stop having a protocol-publish step at all — the SDK pins `thunder-wire = "1"` and publishes independently, whenever the product wants. And because wire v1 is frozen (T-016), Thunder releases are rare by construction.
+- **Impact**: a wire-touching change becomes **one release train** (Thunder's four packages, one version) instead of three protocol-then-SDK choreographies plus twelve hand-ports. Product releases stop having a protocol-publish step at all — the SDK pins `thunder = "1"` and publishes independently, whenever the product wants. And because wire v1 is frozen (T-016), Thunder releases are rare by construction.
 - **Confidence**: high.
 
 ## 5.3 The one thing left over: where the profile lives
@@ -48,8 +48,8 @@ Dissolving the crates leaves exactly one per-product protocol artifact: the ~10-
 
 ### T-024 — Shim, deprecate, archive: the exit path for `nexus-protocol` / `vectorizer-protocol` / `synap-protocol`
 
-1. **Final shim release** (one per crate): contents replaced by `pub use thunder_wire::…` with the old type names aliased (`pub type NexusValue = thunder_wire::Value;`) — anything downstream still compiling against the old crate keeps compiling. RESP3/envelope moves out in the same product release (5.2).
-2. **Deprecation notice** in the shim's README + `#[deprecated]` on the re-exports, pointing at `thunder-wire`.
+1. **Final shim release** (one per crate): contents replaced by `pub use thunder::wire::…` with the old type names aliased (`pub type NexusValue = thunder::wire::Value;`) — anything downstream still compiling against the old crate keeps compiling. RESP3/envelope moves out in the same product release (5.2).
+2. **Deprecation notice** in the shim's README + `#[deprecated]` on the re-exports, pointing at `thunder::wire`.
 3. **Archive**: crates.io does not allow deletion — the shim stays as the terminal version; the crate is removed from the product workspace, and the product's release pipeline drops the protocol-publish step permanently.
 4. In-repo consumers (server, SDK) never go through the shim — they switch to Thunder directly in the same PR (the shim exists only for *external* downstream, if any).
 
@@ -60,8 +60,8 @@ Dissolving the crates leaves exactly one per-product protocol artifact: the ~10-
 
 This sharpens §4 P2 — for each product, the swap PR is:
 
-1. Server: replace `<product>-protocol` deps with `thunder-wire`/`thunder-server`; relocate `resp3`/`envelope` into the server crate.
-2. Rust SDK: depend on `thunder-wire`/`thunder-client` from the registry; add the one-line type alias; delete the path dependency.
+1. Server: replace `<product>-protocol` deps with `thunder` (features `server`); relocate `resp3`/`envelope` into the server crate.
+2. Rust SDK: depend on `thunder` (features `client`, `default-features = false`) from the registry; add the one-line type alias; delete the path dependency.
 3. Publish the final shim version of `<product>-protocol` (T-024).
 4. Delete `crates/<product>-protocol` from the workspace.
 

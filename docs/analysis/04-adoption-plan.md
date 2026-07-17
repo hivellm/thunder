@@ -4,7 +4,7 @@
 
 ## P0 — Decisions and scaffolding (days)
 
-1. Freeze names: registry availability check for `thunder-wire`/`@hivehub/thunder`/`hivellm-thunder`/`HiveLLM.Thunder`; npm org: `@hivehub` (the family org — decided 2026-07-17) (T-011/§2.5).
+1. Freeze names: registry availability check for `thunder` (crates.io — single crate, decided 2026-07-17)/`@hivehub/thunder`/`hivellm-thunder`/`HiveLLM.Thunder`; npm org: `@hivehub` (the family org — decided 2026-07-17) (T-011/§2.5).
 2. Transplant the spec (T-016) + write the profile spec (T-010's six dimensions with the Nexus/Vectorizer/Synap/Lexum columns filled in).
 3. Decide the TS serialization lib (`@msgpack/msgpack` recommended, T-011).
 4. Seed `conformance/vectors/` with the two Vectorizer golden vectors + the framing set (§3.1) — the corpus exists before any implementation does.
@@ -13,9 +13,9 @@
 
 ## P1 — Rust stack + conformance harness (1–2 weeks)
 
-1. `thunder-wire`: port from `nexus-protocol/src/rpc/` (608 LOC — the most complete of the three copies), with the canonical-`Bytes`-as-bin fix and the T-005 decode tolerances.
-2. `thunder-client`: start from Vectorizer's Rust client (the only in-family Rust client with true demux), add the T-013 floor (timeouts, reconnect, error-prefix parsing, optional rustls).
-3. `thunder-server`: generalize the F-010 loop + dispatch trait + metrics; profile-driven handshake (all three styles).
+1. `thunder::wire`: port from `nexus-protocol/src/rpc/` (608 LOC — the most complete of the three copies), with the canonical-`Bytes`-as-bin fix and the T-005 decode tolerances.
+2. `thunder::client`: start from Vectorizer's Rust client (the only in-family Rust client with true demux), add the T-013 floor (timeouts, reconnect, error-prefix parsing, optional rustls).
+3. `thunder::server`: generalize the F-010 loop + dispatch trait + metrics; profile-driven handshake (all three styles).
 4. Corpus loader + full corpus + `nexus-protocol` cross-decode tests + pairwise-fuzz generator (§3.2), all in the default test run.
 5. Shootout skeleton (§6.4): the shared no-op dispatch backend + Thunder and HTTP listeners, so the benchmark program grows alongside the code instead of after it.
 
@@ -30,8 +30,8 @@ Each product swap follows the four-step dissolution recipe of §5.5: server → 
 | Nexus | Server + SDK onto `thunder-{wire,server,client}` with `Profile::nexus()`; `nexus-protocol` dissolved per §5 (`resp3/` moves into `nexus-server`); Rust SDK — **gains pipelining its own Rust client lacks today** (T-003) | Low — types are structurally identical; the terminal shim keeps external `nexus-protocol` consumers compiling |
 | Vectorizer | Same swap + dissolution of `vectorizer-protocol`; keeps its golden tests as a double-check during the transition | Low — Thunder's client is derived from Vectorizer's |
 | Synap | Same swap + dissolution of `synap-protocol` (`envelope.rs`/`resp3/` move into `synap-server`) **plus** the canonical-`Bytes` change: server starts emitting bin (already decodable by every Synap SDK, which all special-case both forms) while Thunder decodes legacy int-arrays from old SDKs | Medium — the one behavioral wire change in the whole plan; sequence server-first, verify with corpus tolerance vectors |
-| Lexum | Skips its planned P1 ("create lexum-protocol") entirely: depends on `thunder-wire`/`thunder-server` with `Profile::lexum()`; its SPEC-015 references Thunder's spec | Negative effort — removes a planned fourth copy (T-008) |
-| Fluxum | Optional: replace `fluxum-protocol/frame.rs` with `thunder-wire`'s frame codec (frame layer only; its envelope stays its own) | Trivial, optional |
+| Lexum | Skips its planned P1 ("create lexum-protocol") entirely: depends on `thunder` (features `server`) with `Profile::lexum()`; its SPEC-015 references Thunder's spec | Negative effort — removes a planned fourth copy (T-008) |
+| Fluxum | Optional: replace `fluxum-protocol/frame.rs` with `thunder::wire`'s frame codec (frame layer only; its envelope stays its own) | Trivial, optional |
 
 **Gate G2**: each swapped product passes its own full suite + the corpus; Synap emits bin `Bytes` and old SDKs still pass their integration tests against it; each product's Rust SDK proves `cargo publish --dry-run` with **zero path dependencies and no product-protocol package** (§5.5), and `crates/<product>-protocol` is gone from the workspace.
 

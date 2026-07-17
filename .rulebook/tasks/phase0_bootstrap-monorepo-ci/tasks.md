@@ -1,5 +1,5 @@
 ## 1. Implementation
-- [x] 1.1 Repo layout: `rust/` workspace (thunder-wire, thunder-client, thunder-server, thunder-bench — empty lib skeletons), `typescript/`, `python/`, `csharp/`, `conformance/{vectors,profiles}/` (PKG-001)
+- [x] 1.1 Repo layout: `rust/` workspace (thunder-wire, thunder-client, thunder-server, thunder-bench — empty lib skeletons), `typescript/`, `python/`, `csharp/`, `conformance/{vectors,profiles}/` (PKG-001) — *note: the three library crates were later consolidated into one `thunder` crate with feature-gated layers; the workspace is now `thunder` + `thunder-bench`*
 - [x] 1.2 Rust workspace lints (clippy `-D warnings`, `unwrap_used`/`expect_used` denied) + rustfmt config, matching the family posture
 - [x] 1.3 TypeScript skeleton: tsup ESM+CJS build, tsc strict, eslint, vitest wired
 - [x] 1.4 Python skeleton: hatchling `hivellm-thunder` (import `thunder_rpc`), ruff, pytest wired

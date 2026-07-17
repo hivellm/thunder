@@ -35,11 +35,11 @@ graph TD
     end
 
     subgraph P1["Phase 1 — Rust stack + conformance harness"]
-        T1.1["T1.1 thunder-wire<br/>(value, Request/Response, codec, caps,<br/>canonical Bytes=bin, legacy tolerances)"]
+        T1.1["T1.1 thunder::wire<br/>(value, Request/Response, codec, caps,<br/>canonical Bytes=bin, legacy tolerances)"]
         T1.2["T1.2 Full corpus + Rust loader<br/>(value matrix, edges, tolerance vectors)"]
         T1.3["T1.3 Reference cross-decode + pairwise fuzz gen<br/>(nexus-protocol dev-dep, both directions)"]
-        T1.4["T1.4 thunder-client<br/>(demux, handshakes, timeouts, reconnect,<br/>push hook, error prefixes)"]
-        T1.5["T1.5 thunder-server<br/>(accept loop, writer task, semaphore,<br/>dispatch trait, metrics, profile enforcement)"]
+        T1.4["T1.4 thunder::client<br/>(demux, handshakes, timeouts, reconnect,<br/>push hook, error prefixes)"]
+        T1.5["T1.5 thunder::server<br/>(accept loop, writer task, semaphore,<br/>dispatch trait, metrics, profile enforcement)"]
         T1.6["T1.6 Shootout skeleton<br/>(no-op backend + Thunder & HTTP listeners)"]
         G1{{"G1: corpus + cross-decode green in default run;<br/>echo server ⇄ client under every profile;<br/>public API shape frozen"}}
         G0 --> T1.1
@@ -133,17 +133,17 @@ graph TD
 | T0.2 | Names reserved on crates.io / npm / PyPI / NuGet; org decision (`@hivehub` (decided 2026-07-17)) recorded | SPEC-006 | FR-60 |
 | T0.3 | `docs/spec/` transplant of wire v1 with provenance header; profile dimensions specified | [SPEC-001](specs/SPEC-001-wire-format.md), [SPEC-002](specs/SPEC-002-profiles.md) | FR-01, FR-10 |
 | T0.4 | Corpus v0: canonical PING/PONG vectors + framing set, loadable data files | [SPEC-005](specs/SPEC-005-conformance.md) | FR-50 |
-| T1.1 | `thunder-wire` crate (port of `nexus-protocol/src/rpc/`, canonical `Bytes`=bin via `serde_bytes`, array `Request`, decode tolerances, configurable cap) | SPEC-001 | FR-01..FR-06 |
+| T1.1 | `thunder::wire` layer (port of `nexus-protocol/src/rpc/`, canonical `Bytes`=bin via `serde_bytes`, array `Request`, decode tolerances, configurable cap) | SPEC-001 | FR-01..FR-06 |
 | T1.2 | Full corpus (value matrix, int/float edges, framing edges, tolerance, push, handshake groups) + Rust loader in default test run | SPEC-005 | FR-50, FR-51 |
 | T1.3 | Cross-decode vs `nexus-protocol` both ways; pairwise-fuzz seed generator | SPEC-005 | FR-52, FR-53 |
-| T1.4 | `thunder-client` (reader task + oneshot demux, 3 handshake styles, connect/call timeouts, reconnect, push hook, error-prefix parsing, endpoint parser, optional rustls) | [SPEC-003](specs/SPEC-003-client.md) | FR-20..FR-27, FR-29 |
-| T1.5 | `thunder-server` — hot path ported from the **Synap** listener (BufWriter drain-then-flush, nodelay, idle timeout; §7 T-027) + Nexus's semaphore/configurable cap/metrics-without-re-encode; dispatch trait, profile enforcement, PUSH_ID refusal, optional rustls | [SPEC-004](specs/SPEC-004-server.md) | FR-40..FR-45 |
+| T1.4 | `thunder::client` (reader task + oneshot demux, 3 handshake styles, connect/call timeouts, reconnect, push hook, error-prefix parsing, endpoint parser, optional rustls) | [SPEC-003](specs/SPEC-003-client.md) | FR-20..FR-27, FR-29 |
+| T1.5 | `thunder::server` — hot path ported from the **Synap** listener (BufWriter drain-then-flush, nodelay, idle timeout; §7 T-027) + Nexus's semaphore/configurable cap/metrics-without-re-encode; dispatch trait, profile enforcement, PUSH_ID refusal, optional rustls | [SPEC-004](specs/SPEC-004-server.md) | FR-40..FR-45 |
 | T1.6 | `thunder-bench` skeleton: no-op dispatch backend + Thunder and HTTP listeners + driver harness | [SPEC-007](specs/SPEC-007-benchmarks.md) | FR-70 |
 | T2.1 | Nexus: server listener + Rust SDK onto Thunder; `resp3/` relocated into `nexus-server`; SDK gains pipelining | SPEC-006 §dissolution | FR-61, NFR-04 |
 | T2.2 | Vectorizer: same swap; golden tests retained as transition double-check | SPEC-006 | FR-61 |
 | T2.3 | Synap: swap + `Bytes` bin emission (server-first); `envelope.rs`/`resp3/` relocated | SPEC-001, SPEC-006 | FR-02, FR-61, NFR-04 |
 | T2.4 | Terminal `#[deprecated]` re-export shims published for the three crates; crates deleted from workspaces; `cargo publish --dry-run` proof per SDK | SPEC-006 | FR-61, FR-62 |
-| T2.5 | Lexum: `thunder-wire`/`thunder-server` deps + `Profile::lexum()`; its SPEC-015 cites Thunder's spec | SPEC-002 | FR-11 |
+| T2.5 | Lexum: `thunder` dep (features `server`) + `Profile::lexum()`; its SPEC-015 cites Thunder's spec | SPEC-002 | FR-11 |
 | T3.1 | `@hivehub/thunder`: wire + client, `@msgpack/msgpack`, streaming FrameReader with cap, `bigint` Int policy, ESM+CJS | SPEC-001, SPEC-003 | FR-01..FR-27 |
 | T3.2 | `hivellm-thunder`: wire + sync/async clients, `msgpack` ≥1.1, `use_bin_type` | SPEC-001, SPEC-003 | FR-28 |
 | T3.3 | `HiveLLM.Thunder`: wire + client, low-level `MessagePackWriter/Reader`, per-call `CancellationToken` | SPEC-001, SPEC-003 | FR-22, NFR-02 |

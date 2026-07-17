@@ -1,6 +1,6 @@
 //! Behavioral floor tests for the Thunder client (SPEC-003, feeds the
-//! CLT-090 suite): loopback tokio responders built on the thunder-wire
-//! codec stand in for `thunder-server` (DAG T1.5) — the client contract
+//! CLT-090 suite): loopback tokio responders built on the thunder::wire
+//! codec stand in for `thunder::server` (DAG T1.5) — the client contract
 //! is exercised end-to-end over real sockets.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]

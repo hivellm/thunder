@@ -1,6 +1,6 @@
 //! Protocol profiles (SPEC-002) — the declarative description of how one
 //! product uses the shared wire. Pure data: the codec never depends on it;
-//! `thunder-client` / `thunder-server` drive their behavior from it.
+//! `thunder::client` / `thunder::server` drive their behavior from it.
 //!
 //! The family registry constants below are generated-by-hand from
 //! `conformance/profiles/*.yaml` (PRO-010) and pinned to those files by a

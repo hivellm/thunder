@@ -65,7 +65,7 @@ pub const fn bench_profile() -> Profile {
 /// The two skeleton lanes. RESP3 and Bolt join at T4.2 (BEN-001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lane {
-    /// Thunder RPC via `thunder-client` against `thunder-server`.
+    /// Thunder RPC via `thunder::client` against `thunder::server`.
     Thunder,
     /// Raw HTTP/1.1 + JSON against the hand-rolled listener.
     Http,

@@ -51,10 +51,10 @@ specified; corpus v0 (canonical PING/PONG + framing vectors) loadable.
 
 | Component | Description |
 |---|---|
-| `thunder-wire` | Value model + `Request`/`Response` + frame codec; canonical `Bytes`=bin, array `Request`, legacy decode tolerances; configurable cap, checked pre-allocation ([SPEC-001](specs/SPEC-001-wire-format.md)) |
+| `thunder::wire` | Value model + `Request`/`Response` + frame codec; canonical `Bytes`=bin, array `Request`, legacy decode tolerances; configurable cap, checked pre-allocation ([SPEC-001](specs/SPEC-001-wire-format.md)) |
 | Conformance | Full corpus + Rust loader; cross-decode vs `nexus-protocol` both ways; pairwise-fuzz generator ([SPEC-005](specs/SPEC-005-conformance.md)) |
-| `thunder-client` | Demux by id, three handshake styles, connect/call timeouts, reconnect, push hook, error-prefix parsing, endpoint parser, optional rustls ([SPEC-003](specs/SPEC-003-client.md)) |
-| `thunder-server` | Accept loop + writer task + semaphore + dispatch trait + metrics + profile enforcement ([SPEC-004](specs/SPEC-004-server.md)) |
+| `thunder::client` | Demux by id, three handshake styles, connect/call timeouts, reconnect, push hook, error-prefix parsing, endpoint parser, optional rustls ([SPEC-003](specs/SPEC-003-client.md)) |
+| `thunder::server` | Accept loop + writer task + semaphore + dispatch trait + metrics + profile enforcement ([SPEC-004](specs/SPEC-004-server.md)) |
 | `thunder-bench` skeleton | No-op dispatch backend + Thunder & HTTP listeners ([SPEC-007](specs/SPEC-007-benchmarks.md)) |
 
 **Definition of done:** corpus + cross-decode green in the default test run (no feature gates);

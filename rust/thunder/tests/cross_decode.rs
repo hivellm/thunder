@@ -2,7 +2,7 @@
 //! shipping reference implementation (`nexus-protocol`), not to itself.
 //! Both directions are asserted over the canonical + value groups:
 //! Thunder-encoded frames decode via `nexus_protocol::rpc` into equal
-//! structures, and reference-encoded frames decode via `thunder-wire`.
+//! structures, and reference-encoded frames decode via `thunder::wire`.
 //!
 //! ## The one deliberate byte-level asymmetry: `Bytes`
 //!

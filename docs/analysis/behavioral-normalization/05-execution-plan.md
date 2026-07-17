@@ -12,8 +12,8 @@
 - **Evidence**: today the protocol lives in 18 independently maintained copies (analysis T-001);
   each of the four behavioral dimensions is re-decided per copy (three TS libs, three C# strategies,
   nine cap-less transports — T-003/T-004/T-007). Post-Thunder, every product's server runs
-  `thunder-server` and every SDK runs a `thunder-client`, all driven by a profile value (SPEC-002,
-  SPEC-004 SRV-011). A behavioral change becomes: a change in `thunder-server`'s dual-accept path
+  `thunder::server` and every SDK runs a `thunder::client`, all driven by a profile value (SPEC-002,
+  SPEC-004 SRV-011). A behavioral change becomes: a change in `thunder::server`'s dual-accept path
   (once), plus a per-product profile-value flip (four lines).
 - **Impact**: this sequences the whole program. Attempting normalization *before* consolidation would
   multiply every convergence by 18 and re-introduce the drift Thunder exists to kill. Attempting it
@@ -21,7 +21,7 @@
   ledger of profile flips. **Normalization is therefore the natural sequel to Thunder M2/M3, not a
   parallel project** — it presupposes the products are already on Thunder. The cheap-win phase (N1)
   can begin as soon as a product swaps (M2 per product); the coordinated handshake track (N3) wants
-  most products swapped first so the change surface is `thunder-server`, not each product's legacy
+  most products swapped first so the change surface is `thunder::server`, not each product's legacy
   listener.
 - **Confidence**: high.
 
@@ -63,7 +63,7 @@ These three convergences need no dual-accept window — they are defaults or add
 | Work | Action | Result |
 |---|---|---|
 | Caps | Make 64 MiB the family default; expose the config knob on Vectorizer + Synap servers (Nexus already has it); set Synap's profile to 64 with a documented override path | `max_frame_bytes`/`max_in_flight` become config-with-default, not per-product identity (BN-008) |
-| TLS | Ensure the uniform optional `tokio-rustls` layer ships on `thunder-server`/`thunder-client` for all four (SRV-040/FR-29) — the family's *first running* RPC TLS, since Vectorizer's is spec-only (BN-007/BN-023; the old sequencing constraint is moot); flip profiles' `tls` to "config default" | Every product can be TLS-or-plaintext by config; behavioral surface identical (BN-009) |
+| TLS | Ensure the uniform optional `tokio-rustls` layer ships on `thunder::server`/`thunder::client` for all four (SRV-040/FR-29) — the family's *first running* RPC TLS, since Vectorizer's is spec-only (BN-007/BN-023; the old sequencing constraint is moot); flip profiles' `tls` to "config default" | Every product can be TLS-or-plaintext by config; behavioral surface identical (BN-009) |
 | Push | Confirm every language's client ships the push hook (CLT-060); demote the profile `push` flag to a capability/documentation bit | Client push contract uniform; emission = capability (BN-010) |
 
 **Gate GN1**: the `max_frame_bytes`, `max_in_flight`, `tls`, and `push` behavioral columns are
@@ -86,11 +86,11 @@ legacy grammars survive only as decode-only tolerance vectors.
 
 ## 5.5 Phase N3 — Handshake convergence (the hard track, dual-accept, per product)
 
-Depends on: GN0; products on Thunder (N3 changes `thunder-server` dual-accept once + profile flips).
+Depends on: GN0; products on Thunder (N3 changes `thunder::server` dual-accept once + profile flips).
 This is the only phase with a per-product deprecation window. It is independent per product — a
 product can sit at N3.a for as long as it wants without blocking any other.
 
-- **N3.a — Servers dual-accept** (non-breaking). `thunder-server` gains a canonical accept path
+- **N3.a — Servers dual-accept** (non-breaking). `thunder::server` gains a canonical accept path
   (leading HELLO → negotiate `proto`, reply with capabilities) alongside the profile's legacy path
   (Nexus: optional-HELLO + `AUTH` allowlist; Synap: no-HELLO immediate serve). The path is chosen by
   the first frame's command, so no ambiguity (BN-019). Add a HELLO-reply-side counter of legacy
@@ -105,10 +105,10 @@ product can sit at N3.a for as long as it wants without blocking any other.
     and credentials rather than replacing a positional form (BN-016). Legacy optional-HELLO+AUTH
     still accepted.
   - **Vectorizer / Lexum** are already canonical — they are the reference; their work is verifying
-    the shared `thunder-server` path matches their existing behavior (BN-015, BN-014).
+    the shared `thunder::server` path matches their existing behavior (BN-015, BN-014).
 - **N3.b — SDK flip** (non-breaking): each product's SDKs send the canonical leading HELLO — a
   Thunder profile-value flip to `hello_mandatory`/`map_payload`, since post-swap every SDK already
-  runs `thunder-client` (CLT-002 branches). Old deployed clients keep using the legacy path against
+  runs `thunder::client` (CLT-002 branches). Old deployed clients keep using the legacy path against
   the dual-accepting server.
 - **N3.c — Per-product legacy cut** (major): once a product's legacy-first-frame counter reads zero
   over its chosen window, remove that product's legacy accept path in a product major (WIRE-016

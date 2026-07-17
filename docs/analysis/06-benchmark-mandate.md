@@ -31,7 +31,7 @@ The same document also carries the cautionary tale the Thunder harness must abso
 
 | Listener | Implementation basis |
 |---|---|
-| Thunder RPC | `thunder-server` with no-op dispatch |
+| Thunder RPC | `thunder::server` with no-op dispatch |
 | RESP3 | the family already ships two RESP3 server implementations (`nexus-protocol/src/resp3/`, Synap's 94-command listener) — reuse one over the same no-op backend |
 | Bolt | minimal Bolt v5 subset (handshake, HELLO, RUN, PULL, one-record results) over the same backend — enough surface for the scenario matrix, small enough to keep honest (~ hundreds of LOC; PackStream is a msgpack-class binary encoding) |
 | HTTP/1.1 + JSON | axum + serde_json over the same backend (keeps the family's headline HTTP claim in the same matrix) |

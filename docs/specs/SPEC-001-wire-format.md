@@ -73,8 +73,10 @@ tolerated legacy forms are decode-only, forever within 1.x.
 ## 4. Purity
 
 - **WIRE-030** [P0] The wire layer SHALL be pure in every language: no sockets, no timers, no
-  product knowledge, no profile dependency. Rust `thunder-wire` SHALL NOT depend on tokio
-  (PRD NFR-09); TS/Python/C# wire modules operate on byte buffers only.
+  product knowledge, no profile dependency. In Rust the `thunder::wire` layer SHALL NOT depend on
+  tokio — `thunder` with `default-features = false` compiles the wire layer alone, with tokio pulled
+  in only by the `client`/`server` features (PRD NFR-09); TS/Python/C# wire modules operate on byte
+  buffers only.
 - **WIRE-031** [P0] Serialization libraries are fixed per language (analysis T-011): Rust
   `rmp-serde` 1.x · TypeScript `@msgpack/msgpack` ^3 · Python `msgpack` ≥1.1
   (`use_bin_type=True`) · C# `MessagePack` 2.5.x via low-level `MessagePackWriter`/`Reader`.

@@ -27,7 +27,7 @@ language's `Profile` constants + pinning tests never drift apart:
   the RESP3 positional form, not the RPC arg-less form).
 - Add `NOPERM` to the recognized auth-family error tokens (Synap emits it,
   `synap_rpc/server.rs:243-245`) in SPEC-002/SPEC-003 and every language's error classifier.
-- Regenerate/adjust the `Profile` constants + profile-pinning tests in rust/thunder-wire,
+- Regenerate/adjust the `Profile` constants + profile-pinning tests in rust/thunder (wire layer),
   typescript, python, csharp to match the corrected YAMLs.
 - Update SPEC-002 PRO-001 prose and the affected profile documentation.
 
@@ -39,7 +39,7 @@ language's loader agrees.
 - Affected specs: SPEC-002 (PRO-001), SPEC-003 (error tokens), the canonical wire spec's handshake
   table if it repeats the Nexus shape
 - Affected code: conformance/profiles/{synap,nexus,vectorizer}.yaml, conformance/vectors/
-  handshake-nexus-hello-request.yaml, rust/thunder-wire/src/profile.rs + tests/profiles.rs,
+  handshake-nexus-hello-request.yaml, rust/thunder/src/wire/profile.rs + tests/profiles.rs,
   typescript/src/profile.ts + tests, python/thunder_rpc/profile.py + tests, csharp/.../Profile.cs +
   tests, all four error classifiers (NOPERM)
 - Breaking change: NO on the wire (bytes unchanged). It DOES change client behavior on the `synap`

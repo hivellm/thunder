@@ -1,7 +1,7 @@
 ## 1. Implementation
-- [ ] 1.1 rust/thunder-server: add a feature-gated `tokio-rustls` accept path — when `tls.cert_path`/`tls.key_path` are set, wrap the accepted stream in a `TlsAcceptor`; plaintext path untouched when unset; no STARTTLS (SRV-040)
-- [ ] 1.2 rust/thunder-server: config surface for cert/key paths (+ optional client-CA for mTLS-later), off by default; error cleanly on misconfig (cert missing/unreadable)
-- [ ] 1.3 rust/thunder-client: optional TLS connector (rustls with native/webpki roots or a configured CA), opt-in via endpoint/profile/client config; plaintext default; TLS/handshake failures classify as Connection errors (FR-29)
+- [ ] 1.1 thunder::server: add a feature-gated `tokio-rustls` accept path — when `tls.cert_path`/`tls.key_path` are set, wrap the accepted stream in a `TlsAcceptor`; plaintext path untouched when unset; no STARTTLS (SRV-040)
+- [ ] 1.2 thunder::server: config surface for cert/key paths (+ optional client-CA for mTLS-later), off by default; error cleanly on misconfig (cert missing/unreadable)
+- [ ] 1.3 thunder::client: optional TLS connector (rustls with native/webpki roots or a configured CA), opt-in via endpoint/profile/client config; plaintext default; TLS/handshake failures classify as Connection errors (FR-29)
 - [ ] 1.4 typescript client: TLS connect option via Node `tls.connect` gated by client config, off by default; mirror the Rust knobs + Connection error mapping
 - [ ] 1.5 python client (sync + async): TLS via `ssl.SSLContext` gated by config, off by default, both clients identical
 - [ ] 1.6 csharp client: TLS via `SslStream` gated by config, off by default

@@ -26,10 +26,10 @@ Thunder's architecture rule is therefore:
 
 ```mermaid
 graph LR
-    subgraph thunder ["Thunder (this repo, one release train)"]
-        W["thunder-wire<br/>value · codec · caps<br/>(pure, no I/O)"]
-        C["thunder-client<br/>Rust · TS · Python · C#"]
-        S["thunder-server<br/>(Rust)"]
+    subgraph thunder ["Thunder (this repo — one crate 'thunder', feature-gated layers)"]
+        W["thunder::wire<br/>value · codec · caps<br/>(always on, pure, no I/O)"]
+        C["thunder::client<br/>Rust (feature) · TS · Python · C#"]
+        S["thunder::server<br/>(Rust, feature)"]
         P["profiles<br/>(data: synap/nexus/vectorizer/lexum)"]
         CONF["conformance/<br/>vectors · profiles · fuzz seeds"]
         W --> C
@@ -52,7 +52,7 @@ graph LR
 
 ## 3. The composite, layer by layer
 
-### 3.1 Wire (`thunder-wire`) — Nexus source, one upgrade nobody has
+### 3.1 Wire (`thunder::wire`) — Nexus source, one upgrade nobody has
 
 | Element | Donor | Thunder addition |
 |---|---|---|
@@ -62,7 +62,7 @@ graph LR
 | Request shape | array (rmp-serde default, majority) | map-shaped requests tolerated server-side (Synap Py/Go/Java legacy, WIRE-013) |
 | Decode API | — | **read returns the frame size** alongside the value, so metrics never re-encode (feeds SRV-007) |
 
-### 3.2 Client (`thunder-client`, ×4 languages) — Vectorizer skeleton, best feature from each SDK
+### 3.2 Client (`thunder::client`, ×4 languages) — Vectorizer skeleton, best feature from each SDK
 
 | Feature | Donor (best-in-family today) | Spec |
 |---|---|---|
@@ -77,7 +77,7 @@ graph LR
 | Connection pool | Vectorizer (fixed-N, round-robin) | CLT-080 [P1] |
 | **Typed error-code parsing** | **none** — zero SDKs parse `[code]`/`NOAUTH` today | CLT-050..052 |
 
-### 3.3 Server (`thunder-server`, Rust) — Synap hot path, Nexus operations, Vectorizer TLS
+### 3.3 Server (`thunder::server`, Rust) — Synap hot path, Nexus operations, Vectorizer TLS
 
 | Element | Donor | Spec |
 |---|---|---|

@@ -21,7 +21,7 @@ publishes, and what the family **stops** publishing because of it.
   Thunder/
   ├── docs/            # spec (transplanted), PRD, DAG, ROADMAP, specs/, analysis/
   ├── conformance/     # vectors/ + profiles/ + fuzz seeds (language-neutral)
-  ├── rust/            # thunder-wire, thunder-client, thunder-server, thunder-bench
+  ├── rust/            # thunder (wire+client+server, feature-gated) + thunder-bench (internal, unpublished)
   ├── typescript/      # @hivehub/thunder
   ├── python/          # hivellm-thunder
   └── csharp/          # HiveLLM.Thunder
@@ -36,21 +36,28 @@ publishes, and what the family **stops** publishing because of it.
 - **PKG-010** [P0] Registry artifacts (names confirmed at T0.2; fallbacks recorded in the same
   decision):
 
-  | Registry | Package(s) |
+  | Registry | Package |
   |---|---|
-  | crates.io | `thunder-wire`, `thunder-client`, `thunder-server` |
+  | crates.io | `thunder` (one crate; `wire` always compiled, `client`/`server` default-on features) |
   | npm | `@hivehub/thunder` |
   | PyPI | `hivellm-thunder` (import `thunder_rpc`) |
   | NuGet | `HiveLLM.Thunder` |
 
+  The Rust side is a **single** crate, not three: `thunder-wire`/`thunder-client`/`thunder-server`
+  always versioned and released together, so publishing them separately only added release
+  choreography. They are now feature-gated modules of `thunder` (superseding the original
+  three-name reservation — see `.rulebook/decisions/2026-07-17-registry-names.md`).
+
 - **PKG-011** [P0] **One release train**: all packages version together (lockstep semver); a
   release publishes every registry from one tag. Wire v1 being frozen makes trains rare by
-  construction.
+  construction. (On crates.io this is now literally one crate, not three lockstep crates.)
 - **PKG-012** [P0] Semver policy: new commands/products never involve Thunder; profile field with
   default, new corpus vectors, new language port = **minor**; decode-tolerance removal, floor
   default changes, public API breaks = **major**; canonical byte changes = never (NFR-01).
-- **PKG-013** [P0] `thunder-wire` has no tokio dependency; `thunder-client`/`-server` depend on
-  `thunder-wire` by exact `=` version within the train.
+- **PKG-013** [P0] Within the `thunder` crate the `wire` layer carries no tokio dependency; the
+  `client` and `server` features each enable `tokio`. A pure-wire consumer builds with
+  `default-features = false`; a client-only SDK with `features = ["client"]`; a server with
+  `["server"]`. One crate version covers all layers (no intra-crate `=` pinning to maintain).
 
 ## 3. Consumption rules (family)
 
@@ -59,20 +66,22 @@ publishes, and what the family **stops** publishing because of it.
   impossible.
 - **PKG-021** [P0] Product SDK swaps MUST NOT change the SDK's public API (PRD NFR-04). Product
   value-type names survive as one-line aliases in the SDK
-  (`pub type NexusValue = thunder_wire::Value;`).
+  (`pub type NexusValue = thunder::Value;`).
 - **PKG-022** [P0] Each swapped Rust SDK proves `cargo publish --dry-run` with zero path
   dependencies and no product-protocol package — the gate-G2 criterion.
 
 ## 4. Dissolution of the per-product `-protocol` crates
 
 - **PKG-030** [P0] Per product (Nexus, Vectorizer, Synap), in one PR each:
-  1. Server replaces `<product>-protocol` deps with `thunder-wire`/`thunder-server`; non-RPC
+  1. Server replaces `<product>-protocol` deps with `thunder` (features `server`); non-RPC
      residue relocates in-repo (`resp3/` → `nexus-server` internal; `envelope.rs` + `resp3/` →
      `synap-server` internal) and is never published again.
-  2. Rust SDK depends on `thunder-wire`/`thunder-client` from crates.io + the PKG-021 alias.
+  2. Rust SDK depends on `thunder` (features `client`, `default-features = false`) from crates.io
+     + the PKG-021 alias.
   3. A **terminal shim** version of `<product>-protocol` is published: contents are
-     `#[deprecated]` re-exports of `thunder-wire` with the old type names, README deprecation
-     notice pointing here. For external downstream only — in-repo consumers never route through it.
+     `#[deprecated]` re-exports of `thunder` (its `wire` layer) with the old type names, README
+     deprecation notice pointing here. For external downstream only — in-repo consumers never route
+     through it.
   4. `crates/<product>-protocol` is deleted from the workspace; the product's release pipeline
      drops its protocol-publish step permanently.
 - **PKG-031** [P0] The shim is the crate's **last** version, ever (crates.io does not delete;

@@ -86,11 +86,19 @@ This boundary is exactly where the agent sweeps found the generic/specific line 
 
 ## 2.4 Per-language design
 
-### Rust — `thunder-wire`, `thunder-client`, `thunder-server`
+### Rust — `thunder::wire`, `thunder::client`, `thunder::server`
 
-- `thunder-wire`: deps `serde`, `rmp-serde 1.x`, `thiserror` only (no tokio) — the same zero-server-knowledge rule `nexus-protocol` documents (`rpc/mod.rs:24-31`). Type name: `Value` (products alias: `pub type NexusValue = thunder_wire::Value;` keeps source compat).
-- `thunder-client`: tokio; reader task + `oneshot` demux (the Vectorizer Rust client is the best in-family starting point, `rpc/client.rs:186-291`); adds what no in-family Rust client has today: per-call timeout, reconnect policy, optional rustls.
-- `thunder-server`: the F-010 pattern with the dispatch trait; metrics as atomics; `Profile`-driven handshake enforcement. Feature-gated `tls` (tokio-rustls, Vectorizer already proves it in-family).
+> **Decided 2026-07-17 (supersedes the three-crate framing below)**: these three ship as **one
+> crate `thunder`** with feature-gated layers (`wire` always compiled, `client`/`server` default-on
+> features), not three separately-published crates — the alternative this section itself floated in
+> §2.6 ("or single crate with features"). They always versioned and released together, so three
+> crates only added release choreography. The layer decomposition, donors and dependency rules below
+> are unchanged and still describe the modules; only the packaging did.
+> See `docs/specs/SPEC-006` PKG-010/013 and `.rulebook/decisions/2026-07-17-registry-names.md`.
+
+- `thunder::wire`: deps `serde`, `rmp-serde 1.x`, `thiserror` only (no tokio) — the same zero-server-knowledge rule `nexus-protocol` documents (`rpc/mod.rs:24-31`). Type name: `Value` (products alias: `pub type NexusValue = thunder::wire::Value;` keeps source compat).
+- `thunder::client`: tokio; reader task + `oneshot` demux (the Vectorizer Rust client is the best in-family starting point, `rpc/client.rs:186-291`); adds what no in-family Rust client has today: per-call timeout, reconnect policy, optional rustls.
+- `thunder::server`: the F-010 pattern with the dispatch trait; metrics as atomics; `Profile`-driven handshake enforcement. Feature-gated `tls` (tokio-rustls, Vectorizer already proves it in-family).
 - **Canonical `Bytes` fix**: `Value::Bytes(Vec<u8>)` must serialize as MessagePack **bin** — use `serde_bytes` (or a manual `serialize_bytes` impl) rather than Synap's seq-of-ints adapter; decode accepts both (T-005).
 
 ### TypeScript — `@hivehub/thunder`
@@ -128,7 +136,7 @@ This boundary is exactly where the agent sweeps found the generic/specific line 
 
 | Registry | Proposed name | Note |
 |---|---|---|
-| crates.io | `thunder-wire`, `thunder-client`, `thunder-server` (or single `hivellm-thunder` with features) | check availability; the per-product `-protocol` crates are **dissolved**, not wrapped — terminal re-export shim for external downstream only, then deleted from the product workspaces (§5) |
+| crates.io | **`thunder`** — the "single crate with features" option, DECIDED 2026-07-17 (wire always on; `client`/`server` default-on features) | check availability; the per-product `-protocol` crates are **dissolved**, not wrapped — terminal re-export shim for external downstream only, then deleted from the product workspaces (§5) |
 | npm | `@hivehub/thunder` | org resolved: `@hivehub`, the family npm org (decided 2026-07-17) |
 | PyPI | `hivellm-thunder` | import name `thunder_rpc` avoids collision with any `thunder` package |
 | NuGet | `HiveLLM.Thunder` | matches `HiveLLM.Synap.SDK` convention |
@@ -139,7 +147,7 @@ Repository layout (this repo):
 Thunder/
 ├── docs/               # THE spec lives here after transplant (§3.3) + this analysis
 ├── conformance/        # language-neutral golden corpus (§3.1)
-├── rust/               # thunder-wire, thunder-client, thunder-server
+├── rust/               # thunder (one crate: wire + client + server, feature-gated)
 ├── typescript/
 ├── python/
 └── csharp/

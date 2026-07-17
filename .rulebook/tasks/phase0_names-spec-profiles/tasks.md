@@ -1,5 +1,5 @@
 ## 1. Implementation
-- [ ] 1.1 Check availability + reserve crates.io `thunder-wire`/`thunder-client`/`thunder-server` (placeholder 0.0.1 publishes if needed); record fallbacks in SPEC-006
+- [ ] 1.1 Check availability + reserve crates.io **`thunder`** (single crate after the Rust consolidation; placeholder 0.0.1 publish if needed; fallback `thunder-rpc`); record in SPEC-006 + the registry-names decision
 - [ ] 1.2 npm org decided: `@hivehub`; reserve `@hivehub/thunder`; reserve PyPI `hivellm-thunder`; reserve NuGet `HiveLLM.Thunder`
 - [x] 1.3 Transplant `rpc-wire-format.md` v1 into `docs/spec/` verbatim + provenance header; coordinate a pointer note in the Nexus repo
 - [x] 1.4 Author `conformance/profiles/*.yaml` per PRO-001/PRO-011 (synap, nexus, vectorizer, lexum): scheme, port, handshake, hello style, push, caps, in-flight, error convention, TLS

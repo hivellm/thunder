@@ -48,7 +48,7 @@ unbuffered syscall per response with Nagle enabled. None of these shows up in it
 they live in the listener. They are all fixable, which is precisely what SPEC-004 SRV-006..008
 mandates for Thunder.
 
-- **Impact**: `thunder-server`'s hot path should be **ported from Synap's listener**, then add
+- **Impact**: `thunder::server`'s hot path should be **ported from Synap's listener**, then add
   Nexus's two operational wins (per-connection in-flight semaphore, configurable cap) and Nexus's
   metrics *computed without re-encoding* (the codec returns the frame length it already knows).
 - **Confidence**: high on mechanisms (file:line above); medium on magnitude until the §6 shootout
@@ -124,7 +124,7 @@ its listener; Vectorizer is the leanest server but unbounded and unbuffered — 
 client.
 
 **But Thunder should not "pick one"** — the DAG already composes, and this section fixes the one
-misassignment: T1.5 (`thunder-server`) bases its hot path on **Synap's listener**, not Nexus's,
+misassignment: T1.5 (`thunder::server`) bases its hot path on **Synap's listener**, not Nexus's,
 while keeping Nexus's semaphore + configurable cap + metrics (computed without re-encoding, per
 SPEC-004 SRV-006..008). T1.4 (client) stays Vectorizer-based (T-028). T1.1 (wire) stays
 Nexus-sourced for the spec-completeness of the port — the bytes are identical anyway (T-029) — with
@@ -132,9 +132,9 @@ the bin canonicalization that beats all three.
 
 | Thunder component | Base | Performance additions over the base |
 |---|---|---|
-| `thunder-wire` | `nexus-protocol` (most complete port source) | `Bytes` = bin (−33% on embeddings vs every current implementation) |
-| `thunder-client` | Vectorizer Rust client | timeouts, reconnect, push hook (parity features, no perf cost) |
-| `thunder-server` | **Synap listener** (BufWriter drain-then-flush, nodelay, inline auth, idle timeout) | Nexus's in-flight semaphore + configurable cap; metrics without re-encode; `Arc`-friendly value type for zero-copy replies |
+| `thunder::wire` | `nexus-protocol` (most complete port source) | `Bytes` = bin (−33% on embeddings vs every current implementation) |
+| `thunder::client` | Vectorizer Rust client | timeouts, reconnect, push hook (parity features, no perf cost) |
+| `thunder::server` | **Synap listener** (BufWriter drain-then-flush, nodelay, inline auth, idle timeout) | Nexus's in-flight semaphore + configurable cap; metrics without re-encode; `Arc`-friendly value type for zero-copy replies |
 
 The §6 shootout (G5) then races the composite against RESP3/Bolt/HTTP — and its per-cell margins
 double as the regression harness proving this composite actually beats each donor implementation.

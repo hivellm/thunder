@@ -11,4 +11,4 @@
 ## 2. Tail (docs + tests — check or waive with tailWaiver)
 - [ ] 2.1 Update or create documentation covering the implementation — SPEC-008 merged and cross-referenced from SPEC-002/003/004 and docs/specs/README.md
 - [ ] 2.2 Write tests covering the new behavior — new corpus vectors load and assert per mode in the rust corpus test (canonical bidirectional, legacy decode-only)
-- [ ] 2.3 Run tests and confirm they pass — `cargo test -p thunder-wire` green with the new vectors present (canonical asserted, legacy tolerated)
+- [ ] 2.3 Run tests and confirm they pass — `cargo test -p thunder` green with the new vectors present (canonical asserted, legacy tolerated)

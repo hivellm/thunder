@@ -5,13 +5,31 @@ build-backend = "hatchling.build"
 [project]
 name = "hivellm-thunder"
 version = "0.1.0"
-description = "HiveLLM binary RPC - wire codec + sync/async clients (skeleton; implementation lands at DAG T3.2)"
+description = "HiveLLM binary RPC (Thunder) - wire v1 codec, family profiles, sync/async multiplexed clients"
+readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = ["msgpack>=1.1"]
+keywords = ["rpc", "messagepack", "msgpack", "hivellm", "thunder"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.24",
+  "PyYAML>=6",
+  "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/hivellm/thunder"
 
 [tool.hatch.build.targets.wheel]
 packages = ["thunder_rpc"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

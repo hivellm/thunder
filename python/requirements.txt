@@ -1,0 +1,4 @@
+msgpack>=1.1
+PyYAML>=6
+pytest>=8
+pytest-asyncio>=0.24

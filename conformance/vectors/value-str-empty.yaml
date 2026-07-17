@@ -1,0 +1,11 @@
+name: value-str-empty
+group: value
+mode: bidirectional
+frame_hex: "0c 00 00 00 92 01 81 a2 4f 6b 81 a3 53 74 72 a0"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: str
+    value: ""
+notes: "Empty Str is legal and distinct from Null (fixstr a0). Covers WIRE-015."

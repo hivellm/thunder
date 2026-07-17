@@ -1,0 +1,15 @@
+name: framing-two-frames-one-buffer
+group: framing
+mode: stream
+frame_hex: "08 00 00 00 93 01 a4 50 49 4e 47 90 10 00 00 00 92 01 81 a2 4f 6b 81 a3 53 74 72 a4 50 4f 4e 47"
+frames:
+  - kind: request
+    id: 1
+    command: PING
+    args: []
+  - kind: response
+    id: 1
+    ok:
+      type: str
+      value: PONG
+notes: "Two frames back-to-back in one buffer (the canonical PING request then the PONG response): each decode consumes exactly one frame and the buffer is fully consumed by sequential decodes. Covers WIRE-022."

@@ -1,0 +1,11 @@
+name: value-str-unicode
+group: value
+mode: bidirectional
+frame_hex: "19 00 00 00 92 01 81 a2 4f 6b 81 a3 53 74 72 ad 68 c3 a9 6c 6c 6f 20 77 c3 b6 72 6c 64"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: str
+    value: "héllo wörld"
+notes: "Multi-byte UTF-8 in the str family; the length prefix counts bytes (13), not code points (11). Covers WIRE-015."

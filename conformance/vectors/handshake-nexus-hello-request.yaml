@@ -1,0 +1,11 @@
+name: handshake-nexus-hello-request
+group: handshake
+mode: bidirectional
+frame_hex: "0f 00 00 00 93 01 a5 48 45 4c 4c 4f 91 81 a3 49 6e 74 01"
+decoded:
+  kind: request
+  id: 1
+  command: HELLO
+  args:
+    - { type: int, value: 1 }
+notes: "Nexus AuthCommand handshake: optional HELLO with positional protocol version [Int(1)] - proto is 1 and never changes within v1. Covers WIRE-004; shape pinned by SPEC-002 PRO-001."

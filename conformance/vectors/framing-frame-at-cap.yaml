@@ -1,0 +1,11 @@
+name: framing-frame-at-cap
+group: framing
+mode: bidirectional
+max_frame_bytes: 8
+frame_hex: "08 00 00 00 93 01 a4 50 49 4e 47 90"
+decoded:
+  kind: request
+  id: 1
+  command: PING
+  args: []
+notes: "Frame body exactly AT the cap (8-byte body, cap 8) must decode - the limit is exclusive-above, not inclusive-below. max_frame_bytes overrides the 64 MiB default so the boundary is testable with real bytes. Covers WIRE-020."

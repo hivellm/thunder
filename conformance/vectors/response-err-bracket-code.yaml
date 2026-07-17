@@ -1,0 +1,9 @@
+name: response-err-bracket-code
+group: value
+mode: bidirectional
+frame_hex: "38 00 00 00 92 09 81 a3 45 72 72 d9 2f 5b 63 6f 6c 6c 65 63 74 69 6f 6e 5f 6e 6f 74 5f 66 6f 75 6e 64 5d 20 6e 6f 20 73 75 63 68 20 63 6f 6c 6c 65 63 74 69 6f 6e 3a 20 64 6f 63 73"
+decoded:
+  kind: response
+  id: 9
+  err: "[collection_not_found] no such collection: docs"
+notes: "Vectorizer/Lexum \"[code] message\" convention travels as an opaque string (str8 d9 - 47 bytes exceeds fixstr). Covers WIRE-040."

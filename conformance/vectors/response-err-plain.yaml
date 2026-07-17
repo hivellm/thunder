@@ -1,0 +1,9 @@
+name: response-err-plain
+group: value
+mode: bidirectional
+frame_hex: "1b 00 00 00 92 09 81 a3 45 72 72 b3 45 52 52 20 75 6e 6b 6e 6f 77 6e 20 63 6f 6d 6d 61 6e 64"
+decoded:
+  kind: response
+  id: 9
+  err: "ERR unknown command"
+notes: "Plain Err arm: {\"Err\": \"...\"} single-key map, RESP-style ERR prefix preserved verbatim. Covers WIRE-003, WIRE-040."

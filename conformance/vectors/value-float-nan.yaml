@@ -1,0 +1,11 @@
+name: value-float-nan
+group: value
+mode: bidirectional
+frame_hex: "16 00 00 00 92 01 81 a2 4f 6b 81 a5 46 6c 6f 61 74 cb 7f f8 00 00 00 00 00 00"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: float
+    bits: "7ff8000000000000"
+notes: "Quiet-NaN bit pattern must round-trip bit-exact; NaN != NaN so loaders MUST compare floats by bit pattern (the `bits` field is the u64 IEEE-754 pattern in hex). Covers WIRE-014."

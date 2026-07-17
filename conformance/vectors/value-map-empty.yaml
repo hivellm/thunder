@@ -1,0 +1,11 @@
+name: value-map-empty
+group: value
+mode: bidirectional
+frame_hex: "0c 00 00 00 92 01 81 a2 4f 6b 81 a3 4d 61 70 90"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: map
+    value: []
+notes: "Empty Map is legal; Map is a pair LIST so it encodes as fixarray (90), not fixmap. Covers WIRE-002, WIRE-015."

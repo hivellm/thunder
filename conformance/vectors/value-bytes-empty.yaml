@@ -1,0 +1,11 @@
+name: value-bytes-empty
+group: value
+mode: bidirectional
+frame_hex: "0f 00 00 00 92 01 81 a2 4f 6b 81 a5 42 79 74 65 73 c4 00"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: bytes
+    value: ""
+notes: "Empty Bytes is legal: bin8 with length 0 (c4 00). Covers WIRE-010, WIRE-015."

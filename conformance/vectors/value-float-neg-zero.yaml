@@ -1,0 +1,11 @@
+name: value-float-neg-zero
+group: value
+mode: bidirectional
+frame_hex: "16 00 00 00 92 01 81 a2 4f 6b 81 a5 46 6c 6f 61 74 cb 80 00 00 00 00 00 00 00"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: float
+    bits: "8000000000000000"
+notes: "-0.0: sign bit must survive, but -0.0 == 0.0 numerically - loaders MUST compare by bit pattern (`bits`), not float equality. Covers WIRE-014."

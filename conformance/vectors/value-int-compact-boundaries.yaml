@@ -1,0 +1,18 @@
+name: value-int-compact-boundaries
+group: value
+mode: bidirectional
+frame_hex: "43 00 00 00 93 02 a4 45 43 48 4f 98 81 a3 49 6e 74 d0 df 81 a3 49 6e 74 e0 81 a3 49 6e 74 7f 81 a3 49 6e 74 cc 80 81 a3 49 6e 74 cc ff 81 a3 49 6e 74 cd 01 00 81 a3 49 6e 74 cd ff ff 81 a3 49 6e 74 ce 00 01 00 00"
+decoded:
+  kind: request
+  id: 2
+  command: ECHO
+  args:
+    - { type: int, value: -33 }
+    - { type: int, value: -32 }
+    - { type: int, value: 127 }
+    - { type: int, value: 128 }
+    - { type: int, value: 255 }
+    - { type: int, value: 256 }
+    - { type: int, value: 65535 }
+    - { type: int, value: 65536 }
+notes: "Compact-int boundaries both sides: -33 (int8 d0) / -32 (negative fixint e0), 127 (positive fixint) / 128 (uint8 cc), 255 (uint8) / 256 (uint16 cd), 65535 (uint16) / 65536 (uint32 ce). Shortest-form packing is mandatory. Covers WIRE-014."

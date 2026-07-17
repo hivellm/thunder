@@ -1,0 +1,11 @@
+name: value-array-empty
+group: value
+mode: bidirectional
+frame_hex: "0e 00 00 00 92 01 81 a2 4f 6b 81 a5 41 72 72 61 79 90"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: array
+    value: []
+notes: "Empty Array is legal (fixarray 90). Covers WIRE-002, WIRE-015."

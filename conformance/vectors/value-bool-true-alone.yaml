@@ -1,0 +1,11 @@
+name: value-bool-true-alone
+group: value
+mode: bidirectional
+frame_hex: "0d 00 00 00 92 01 81 a2 4f 6b 81 a4 42 6f 6f 6c c3"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: bool
+    value: true
+notes: "Bool(true) alone as a single-key map {\"Bool\": true}. Covers WIRE-002, WIRE-003."

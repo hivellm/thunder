@@ -1,0 +1,11 @@
+name: value-float-neg-inf
+group: value
+mode: bidirectional
+frame_hex: "16 00 00 00 92 01 81 a2 4f 6b 81 a5 46 6c 6f 61 74 cb ff f0 00 00 00 00 00 00"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: float
+    value: -.inf
+notes: "-Infinity round-trips as f64. Covers WIRE-014."

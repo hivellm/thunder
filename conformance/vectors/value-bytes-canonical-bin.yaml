@@ -1,0 +1,11 @@
+name: value-bytes-canonical-bin
+group: value
+mode: bidirectional
+frame_hex: "13 00 00 00 92 01 81 a2 4f 6b 81 a5 42 79 74 65 73 c4 04 01 02 03 ff"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: bytes
+    value: "01 02 03 ff"
+notes: "Canonical Bytes: MessagePack bin8 (c4), never the int-array form. The same payload's legacy form lives in tolerance-bytes-int-array. Covers WIRE-010."

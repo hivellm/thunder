@@ -1,0 +1,11 @@
+name: value-float-plain
+group: value
+mode: bidirectional
+frame_hex: "16 00 00 00 92 01 81 a2 4f 6b 81 a5 46 6c 6f 61 74 cb 3f f8 00 00 00 00 00 00"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: float
+    value: 1.5
+notes: "Float alone, packed as f64 (cb) even for exactly-representable values. Covers WIRE-002, WIRE-014."

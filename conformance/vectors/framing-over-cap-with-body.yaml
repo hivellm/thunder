@@ -1,0 +1,7 @@
+name: framing-over-cap-with-body
+group: framing
+mode: reject
+max_frame_bytes: 7
+frame_hex: "08 00 00 00 93 01 a4 50 49 4e 47 90"
+error: frame_too_large
+notes: "Frame body ONE byte over the cap (8-byte body, cap 7) with the body actually present: still a typed FrameTooLarge, decided from the prefix alone. Complements framing-cap-plus-one (default cap, prefix-only). Covers WIRE-020, WIRE-021."

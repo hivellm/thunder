@@ -1,0 +1,14 @@
+name: push-id-u32-max
+group: push
+mode: bidirectional
+frame_hex: "34 00 00 00 92 ce ff ff ff ff 81 a2 4f 6b 81 a5 41 72 72 61 79 93 81 a3 53 74 72 a7 6d 65 73 73 61 67 65 81 a3 53 74 72 a4 6e 65 77 73 81 a3 53 74 72 a5 68 65 6c 6c 6f"
+decoded:
+  kind: response
+  id: 4294967295
+  ok:
+    type: array
+    value:
+      - { type: str, value: message }
+      - { type: str, value: news }
+      - { type: str, value: hello }
+notes: "Server-initiated push frame: id = u32::MAX (PUSH_ID, uint32 ce ff ff ff ff) is reserved - client demultiplexers route it to the push hook, never to a pending call; servers refuse requests carrying it. Covers WIRE-005."

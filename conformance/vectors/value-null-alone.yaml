@@ -1,0 +1,10 @@
+name: value-null-alone
+group: value
+mode: bidirectional
+frame_hex: "0b 00 00 00 92 01 81 a2 4f 6b a4 4e 75 6c 6c"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: "null"
+notes: "Null alone: unit variant encodes as the bare string \"Null\" inside {\"Ok\": ...}. Covers WIRE-002, WIRE-003."

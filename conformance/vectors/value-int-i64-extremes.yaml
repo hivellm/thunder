@@ -1,0 +1,12 @@
+name: value-int-i64-extremes
+group: value
+mode: bidirectional
+frame_hex: "24 00 00 00 93 02 a4 45 43 48 4f 92 81 a3 49 6e 74 d3 80 00 00 00 00 00 00 00 81 a3 49 6e 74 cf 7f ff ff ff ff ff ff ff"
+decoded:
+  kind: request
+  id: 2
+  command: ECHO
+  args:
+    - { type: int, value: -9223372036854775808 }
+    - { type: int, value: 9223372036854775807 }
+notes: "i64::MIN (int64 d3) and i64::MAX (uint64 cf - rmp packs the shortest unsigned form for positive ints). Covers WIRE-002, WIRE-014."

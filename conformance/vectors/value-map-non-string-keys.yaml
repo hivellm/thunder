@@ -1,0 +1,14 @@
+name: value-map-non-string-keys
+group: value
+mode: bidirectional
+frame_hex: "37 00 00 00 92 01 81 a2 4f 6b 81 a3 4d 61 70 93 92 81 a3 49 6e 74 02 81 a3 53 74 72 a3 74 77 6f 92 81 a4 42 6f 6f 6c c3 a4 4e 75 6c 6c 92 81 a3 53 74 72 a1 6b 81 a3 49 6e 74 01"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: map
+    value:
+      - [{ type: int, value: 2 }, { type: str, value: two }]
+      - [{ type: bool, value: true }, { type: "null" }]
+      - [{ type: str, value: k }, { type: int, value: 1 }]
+notes: "Map keys may be ANY value (Int, Bool, Str here) and insertion order is preserved - Map is an ordered pair list, not a hash map. Covers WIRE-002."

@@ -5,11 +5,29 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>HiveLLM.Thunder</PackageId>
     <Version>0.1.0</Version>
-    <Description>HiveLLM binary RPC - wire codec + multiplexed client (skeleton; implementation lands at DAG T3.3)</Description>
+    <Authors>HiveLLM</Authors>
+    <Description>HiveLLM binary RPC (wire v1) - length-prefixed MessagePack codec and multiplexed TCP client with the family profiles (Synap, Nexus, Vectorizer, Lexum).</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <IsPackable>false</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/hivellm/thunder</RepositoryUrl>
+    <PackageTags>rpc;messagepack;hivellm;thunder</PackageTags>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Sole runtime dependency (WIRE-031): the low-level writer/reader API. -->
+    <PackageReference Include="MessagePack" Version="2.5.302" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HiveLLM.Thunder.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
 </Project>

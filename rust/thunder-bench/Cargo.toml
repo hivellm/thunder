@@ -9,7 +9,9 @@ publish = false
 
 [dependencies]
 # One dependency now — the whole stack behind the default client+server features.
-thunder = { path = "../thunder", version = "0.1.0" }
+# Key `thunder` + `package = "thunder-rpc"` is the canonical rename form: the
+# registry name collided (see ../thunder/Cargo.toml), the import name did not.
+thunder = { path = "../thunder", version = "0.1.0", package = "thunder-rpc" }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 serde = { workspace = true }
 serde_json = "1"

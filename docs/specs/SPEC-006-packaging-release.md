@@ -36,12 +36,19 @@ publishes, and what the family **stops** publishing because of it.
 - **PKG-010** [P0] Registry artifacts (names confirmed at T0.2; fallbacks recorded in the same
   decision):
 
-  | Registry | Package |
-  |---|---|
-  | crates.io | `thunder` (one crate; `wire` always compiled, `client`/`server` default-on features) |
-  | npm | `@hivehub/thunder` |
-  | PyPI | `hivellm-thunder` (import `thunder_rpc`) |
-  | NuGet | `HiveLLM.Thunder` |
+  | Registry | Package | Availability (checked 2026-07-17) |
+  |---|---|---|
+  | crates.io | **`thunder-rpc`** (one crate; `wire` always compiled, `client`/`server` default-on features; **lib name stays `thunder`**, so `use thunder::…` is unchanged) | `thunder` is **TAKEN** — fallback applied |
+  | npm | `@hivehub/thunder` | free |
+  | PyPI | `hivellm-thunder` (import `thunder_rpc`) | free |
+  | NuGet | `HiveLLM.Thunder` | free |
+
+  **The crates.io name collided and the fallback is now the name.** `thunder` is a 2018
+  CLI-boilerplate crate (last release 0.3.1, 9,478 downloads). crates.io does not recycle
+  published names, so the fallback this task pre-approved — `thunder-rpc` — is the registry
+  identity. `[lib] name = "thunder"` keeps the collision confined to the registry: `cargo add
+  thunder-rpc` still gives `use thunder::`, so no product, doc or example changes. Verified with
+  `cargo publish --dry-run` (25 files, 66.7 KiB).
 
   The Rust side is a **single** crate, not three: `thunder-wire`/`thunder-client`/`thunder-server`
   always versioned and released together, so publishing them separately only added release
@@ -54,7 +61,7 @@ publishes, and what the family **stops** publishing because of it.
 - **PKG-012** [P0] Semver policy: new commands/products never involve Thunder; profile field with
   default, new corpus vectors, new language port = **minor**; decode-tolerance removal, floor
   default changes, public API breaks = **major**; canonical byte changes = never (NFR-01).
-- **PKG-013** [P0] Within the `thunder` crate the `wire` layer carries no tokio dependency; the
+- **PKG-013** [P0] Within the `thunder-rpc` crate (lib `thunder`) the `wire` layer carries no tokio dependency; the
   `client` and `server` features each enable `tokio`. A pure-wire consumer builds with
   `default-features = false`; a client-only SDK with `features = ["client"]`; a server with
   `["server"]`. One crate version covers all layers (no intra-crate `=` pinning to maintain).
@@ -73,10 +80,10 @@ publishes, and what the family **stops** publishing because of it.
 ## 4. Dissolution of the per-product `-protocol` crates
 
 - **PKG-030** [P0] Per product (Nexus, Vectorizer, Synap), in one PR each:
-  1. Server replaces `<product>-protocol` deps with `thunder` (features `server`); non-RPC
+  1. Server replaces `<product>-protocol` deps with `thunder-rpc` (features `server`); non-RPC
      residue relocates in-repo (`resp3/` → `nexus-server` internal; `envelope.rs` + `resp3/` →
      `synap-server` internal) and is never published again.
-  2. Rust SDK depends on `thunder` (features `client`, `default-features = false`) from crates.io
+  2. Rust SDK depends on `thunder-rpc` (features `client`, `default-features = false`) from crates.io — imported as `thunder`
      + the PKG-021 alias.
   3. A **terminal shim** version of `<product>-protocol` is published: contents are
      `#[deprecated]` re-exports of `thunder` (its `wire` layer) with the old type names, README

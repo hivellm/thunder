@@ -1292,7 +1292,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "thunder"
+name = "thunder-bench"
+version = "0.1.0"
+dependencies = [
+ "core_affinity",
+ "serde",
+ "serde_json",
+ "thunder-rpc",
+ "tokio",
+]
+
+[[package]]
+name = "thunder-rpc"
 version = "0.1.0"
 dependencies = [
  "nexus-protocol",
@@ -1301,17 +1312,6 @@ dependencies = [
  "serde_bytes",
  "serde_yaml",
  "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "thunder-bench"
-version = "0.1.0"
-dependencies = [
- "core_affinity",
- "serde",
- "serde_json",
- "thunder",
  "tokio",
 ]
 

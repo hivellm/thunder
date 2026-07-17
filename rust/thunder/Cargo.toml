@@ -1,10 +1,21 @@
 [package]
-name = "thunder"
+# `thunder` is TAKEN on crates.io — a 2018 CLI-boilerplate crate, last release
+# 0.3.1, 9,478 downloads. crates.io does not recycle published names, so the
+# registry name is the fallback the naming task pre-approved: `thunder-rpc`.
+#
+# The LIB name stays `thunder`, so every `use thunder::...` in this repo, in the
+# products, and in the docs keeps working: `cargo add thunder-rpc` gives you
+# `use thunder::`. Only the registry identity changes, which is the only place
+# the collision exists.
+name = "thunder-rpc"
 description = "HiveLLM binary RPC — one crate: wire codec (v1, frozen), multiplexed client, and the family server hot path, behind features (SPEC-001/003/004)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[lib]
+name = "thunder"
 
 [dependencies]
 serde = { workspace = true }
@@ -15,7 +26,7 @@ tokio = { workspace = true, optional = true }
 
 [features]
 # The wire layer is always compiled. `client` and `server` are additive and
-# each pull in the async runtime; both are on by default so `cargo add thunder`
+# each pull in the async runtime; both are on by default so `cargo add thunder-rpc`
 # gives the whole stack. A client-only SDK sets `default-features = false,
 # features = ["client"]`; a server does likewise with ["server"].
 default = ["client", "server"]

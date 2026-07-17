@@ -38,7 +38,7 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
       - name: Conformance corpus (TST-020/021)
-        run: cargo test -p thunder --test corpus --test cross_decode
+        run: cargo test -p thunder-rpc --test corpus --test cross_decode
 
   typescript:
     name: typescript

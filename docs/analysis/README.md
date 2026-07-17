@@ -58,3 +58,13 @@ The direction is already established by committed artifacts: Synap holds a **tra
 ### Recommendation
 
 Build it, in this repository, in four phases (§4): **P0** name/scope decisions + spec transplant → **P1** Rust `wire`+`client`+`server` with the conformance corpus → **P2** the three products' Rust sides swap to it and the `-protocol` crates are dissolved per §5 (terminal shim published, crate deleted from the workspace) → **P3** TypeScript/Python/C# packages + SDK swaps, closing the cap/timeout/reconnect gaps as a side effect. Go is a recommended fast-follow (all three products ship a Go SDK); PHP/Java remain per-product until demand justifies them.
+
+### Related analyses
+
+- [behavioral-normalization/](behavioral-normalization/README.md) — the sequel question (2026-07-17):
+  can the per-product behavioral differences the `Profile` parameterizes (handshake, errors, push,
+  caps, TLS) be **eliminated** so all four products speak exactly the same way? Verdict: yes — four
+  of five dimensions at near-zero cost, handshake via a dual-accept migration (BN-001..BN-023). Its
+  source sweep also exposed three profile-registry errata (BN-023) that correct assumptions made
+  here (notably: Synap's RPC path *does* authenticate behind `require_auth`, contra §1's
+  "auth is HTTP-only" reading).

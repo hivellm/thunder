@@ -10,11 +10,20 @@ Frame = `u32 LE length` + MessagePack body (length counts the body only; default
 
 | Product | Wire crate (LOC of wire layer) | RPC port | Handshake profile | Push | Frame cap | TLS |
 |---|---|---|---|---|---|---|
-| **Synap** (origin) | `synap-protocol/src/synap_rpc/` (495) | 15501 (HTTP 15500, RESP3 6379) | none — auth is HTTP-only | ✅ `SUBSCRIBE`, id `u32::MAX` | **512 MiB** (`codec.rs:21`) | none |
+| **Synap** (origin) | `synap-protocol/src/synap_rpc/` (495) | 15501 (HTTP 15500, RESP3 6379) | `AUTH` + `NOAUTH` gate + `NOPERM` ACL behind `require_auth`; **no HELLO** [†] | ✅ `SUBSCRIBE`, id `u32::MAX` | **512 MiB** (`codec.rs:21`) | none |
 | **Nexus** (canonical spec) | `nexus-protocol/src/rpc/` (608) | 15475 (HTTP 15474, RESP3 15476) | `HELLO` optional; `AUTH [api_key]` or `[user, pass]`; pre-auth allowlist | reserved only | 64 MiB, configurable | none in 1.0 (sidecar documented) |
 | **Vectorizer** (port) | `vectorizer-protocol/src/rpc_wire/` (526) | 15503 (REST 15002) | `HELLO` **mandatory first frame** — Map with `version`, `token`/`api_key`, `client_name`; reply carries `capabilities` | omitted in v1 | 64 MiB hardcoded | optional `tokio-rustls` |
 | **Fluxum** (partial) | `fluxum-protocol/src/frame.rs` — frame layer explicitly labeled "HiveLLM wire standard" | — | own envelope (`[tag, payload]` messages + FluxBIN rows), **not** Request/Response | own | own | — |
 | **Lexum** (pending) | none yet — SPEC-015 reserved; complete adoption plan in `Lexum/docs/analysis/hivellm-rpc/05-execution-plan.md` | 17001 planned | Vectorizer-style planned | reserved | configurable planned | reserved keys |
+
+> **[†] Correction (2026-07-17)**: this row originally read "none — auth is HTTP-only." A direct
+> read of `Synap/crates/synap-server/src/protocol/synap_rpc/server.rs:170-249` refutes that: the
+> binary RPC listener authenticates **inline in its read loop** (`AUTH` handler → shared
+> `UserManager`; `NOAUTH` gate; `NOPERM` admin ACL), gated by the `require_auth` config toggle. What
+> Synap's RPC path genuinely lacks is a `HELLO` handler. See the behavioral-normalization analysis,
+> BN-017 and the registry errata BN-023 (`docs/analysis/behavioral-normalization/`). The Vectorizer
+> `optional tokio-rustls` posture is likewise spec'd-but-unwired (BN-007); the "TLS: none" cells
+> here are all accurate today.
 
 ### T-001 — The wire codec exists in 18 independently maintained copies totalling ≈ 17,500 LOC
 

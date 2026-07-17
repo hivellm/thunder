@@ -1,5 +1,5 @@
 ## 1. Implementation
-- [ ] 1.1 TS SDK: rewire onto `@hivellm/thunder` under the Vectorizer profile; delete the `rpc/` transport internals (PKG-040); dotted command catalog + capabilities semantics stay product-side (analysis §2.3), public API unchanged (PKG-021, NFR-04)
+- [ ] 1.1 TS SDK: rewire onto `@hivehub/thunder` under the Vectorizer profile; delete the `rpc/` transport internals (PKG-040); dotted command catalog + capabilities semantics stay product-side (analysis §2.3), public API unchanged (PKG-021, NFR-04)
 - [ ] 1.2 Python SDK: same over `hivellm-thunder`, wiring both sync and async product clients onto the matching Thunder clients (FR-28 consumers)
 - [ ] 1.3 C# SDK: same over `HiveLLM.Thunder`
 - [ ] 1.4 Pools: keep the existing thin product-side pool wrappers (~150 LOC pattern) over Thunder clients until CLT-080 lands - the swap is never blocked on pooling (SPEC-003 CLT-080 swap note)

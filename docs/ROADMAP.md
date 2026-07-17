@@ -83,7 +83,7 @@ package.
 
 | Package | Notes |
 |---|---|
-| `@hivellm/thunder` | `@msgpack/msgpack`, streaming FrameReader with cap, `bigint` Int policy, ESM+CJS |
+| `@hivehub/thunder` | `@msgpack/msgpack`, streaming FrameReader with cap, `bigint` Int policy, ESM+CJS |
 | `hivellm-thunder` | sync **and** async clients, `msgpack` ≥1.1 |
 | `HiveLLM.Thunder` | low-level `MessagePackWriter`/`Reader` (never `Typeless`), per-call `CancellationToken` |
 

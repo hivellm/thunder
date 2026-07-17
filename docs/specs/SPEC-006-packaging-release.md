@@ -22,7 +22,7 @@ publishes, and what the family **stops** publishing because of it.
   ├── docs/            # spec (transplanted), PRD, DAG, ROADMAP, specs/, analysis/
   ├── conformance/     # vectors/ + profiles/ + fuzz seeds (language-neutral)
   ├── rust/            # thunder-wire, thunder-client, thunder-server, thunder-bench
-  ├── typescript/      # @hivellm/thunder
+  ├── typescript/      # @hivehub/thunder
   ├── python/          # hivellm-thunder
   └── csharp/          # HiveLLM.Thunder
   ```
@@ -39,7 +39,7 @@ publishes, and what the family **stops** publishing because of it.
   | Registry | Package(s) |
   |---|---|
   | crates.io | `thunder-wire`, `thunder-client`, `thunder-server` |
-  | npm | `@hivellm/thunder` |
+  | npm | `@hivehub/thunder` |
   | PyPI | `hivellm-thunder` (import `thunder_rpc`) |
   | NuGet | `HiveLLM.Thunder` |
 

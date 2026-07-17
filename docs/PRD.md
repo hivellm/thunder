@@ -135,7 +135,7 @@ Priority: **P0** = required for 1.0.0 · **P1** = required for the fast-follow r
 
 | ID | P | Requirement |
 |---|---|---|
-| FR-60 | P0 | Published packages: crates.io (`thunder-wire`/`thunder-client`/`thunder-server`), npm (`@hivellm/thunder`), PyPI (`hivellm-thunder`), NuGet (`HiveLLM.Thunder`) — one version per release train |
+| FR-60 | P0 | Published packages: crates.io (`thunder-wire`/`thunder-client`/`thunder-server`), npm (`@hivehub/thunder`), PyPI (`hivellm-thunder`), NuGet (`HiveLLM.Thunder`) — one version per release train |
 | FR-61 | P0 | Dissolution of `nexus-protocol` / `vectorizer-protocol` / `synap-protocol`: terminal deprecated re-export shims published; crates removed from product workspaces; non-RPC residue (RESP3, envelope) relocated in-repo |
 | FR-62 | P0 | Product SDKs publish with zero path dependencies and no product-protocol package (`cargo publish --dry-run` proof) |
 | FR-63 | P1 | Go module `github.com/hivellm/thunder-go` |

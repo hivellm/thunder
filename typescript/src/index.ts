@@ -1,5 +1,5 @@
 /**
- * @hivellm/thunder — HiveLLM binary RPC (wire v1, frozen).
+ * @hivehub/thunder — HiveLLM binary RPC (wire v1, frozen).
  *
  * Skeleton package: the wire codec + client land at DAG T3.1
  * (`phase3_typescript-package`), corpus-first per SPEC-005.

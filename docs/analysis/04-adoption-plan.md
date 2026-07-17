@@ -4,7 +4,7 @@
 
 ## P0 — Decisions and scaffolding (days)
 
-1. Freeze names: registry availability check for `thunder-wire`/`@hivellm/thunder`/`hivellm-thunder`/`HiveLLM.Thunder`; decide npm org (`@hivellm` vs the `@hivehub` the SDKs use today) (T-011/§2.5).
+1. Freeze names: registry availability check for `thunder-wire`/`@hivehub/thunder`/`hivellm-thunder`/`HiveLLM.Thunder`; npm org: `@hivehub` (the family org — decided 2026-07-17) (T-011/§2.5).
 2. Transplant the spec (T-016) + write the profile spec (T-010's six dimensions with the Nexus/Vectorizer/Synap/Lexum columns filled in).
 3. Decide the TS serialization lib (`@msgpack/msgpack` recommended, T-011).
 4. Seed `conformance/vectors/` with the two Vectorizer golden vectors + the framing set (§3.1) — the corpus exists before any implementation does.

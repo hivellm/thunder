@@ -21,7 +21,7 @@ End state per consumer (no `-protocol` crate remains in any product workspace):
 |---|---|---|
 | Product **server core** (Rust) | `thunder-wire` + `thunder-server` | RPC wire → Thunder. Non-RPC residue relocates in-repo: `resp3/` → a server-internal module (Nexus SDK never consumed it — its transport imports only `nexus_protocol::rpc`, `sdks/rust/src/transport/rpc.rs:11-12`; Synap's Rust SDK hand-rolls its own RESP3 parser, `transport/mod.rs`); `envelope.rs` → `synap-server` internal. Internal modules are never published. |
 | Product **Rust SDK** | `thunder-wire` + `thunder-client` | The product alias is one line in the SDK itself: `pub type NexusValue = thunder_wire::Value;` — source compatibility for SDK users without any intermediate crate. |
-| Product **TS/Py/C# SDKs** | `@hivellm/thunder` / `hivellm-thunder` / `HiveLLM.Thunder` | Today's in-package transport copies are deleted (they were never separate packages — no dissolution needed, just the P3 swap). |
+| Product **TS/Py/C# SDKs** | `@hivehub/thunder` / `hivellm-thunder` / `HiveLLM.Thunder` | Today's in-package transport copies are deleted (they were never separate packages — no dissolution needed, just the P3 swap). |
 | **New projects** (Lexum, …) | Thunder packages directly | The planned `lexum-protocol` is never created (T-019). |
 
 - **Impact**: a wire-touching change becomes **one release train** (Thunder's four packages, one version) instead of three protocol-then-SDK choreographies plus twelve hand-ports. Product releases stop having a protocol-publish step at all — the SDK pins `thunder-wire = "1"` and publishes independently, whenever the product wants. And because wire v1 is frozen (T-016), Thunder releases are rare by construction.

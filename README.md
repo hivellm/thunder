@@ -73,7 +73,7 @@ Every Thunder client, in every language: demux by id (pipelining) · frame cap o
 | Language | Package | Serialization |
 |---|---|---|
 | Rust | `thunder-wire` · `thunder-client` · `thunder-server` (crates.io) | `rmp-serde` 1.x |
-| TypeScript | `@hivellm/thunder` (npm) | `@msgpack/msgpack` ^3 |
+| TypeScript | `@hivehub/thunder` (npm) | `@msgpack/msgpack` ^3 |
 | Python | `hivellm-thunder` (PyPI, import `thunder_rpc`) — sync **and** async clients | `msgpack` ≥1.1 |
 | C# | `HiveLLM.Thunder` (NuGet, `net8.0`) | `MessagePack` 2.5.x — low-level writer/reader only, never `Typeless` |
 | Go *(fast-follow)* | `github.com/hivellm/thunder-go` | `vmihailenco/msgpack` v5 |
@@ -94,7 +94,7 @@ let pong = client.call("PING", vec![]).await?;
 
 ```typescript
 // TypeScript (planned)
-import { Client, Profiles } from "@hivellm/thunder";
+import { Client, Profiles } from "@hivehub/thunder";
 
 const client = await Client.connect("127.0.0.1:15475", Profiles.nexus, { apiKey });
 const result = await client.call("CYPHER", [Value.str("RETURN 1")]);

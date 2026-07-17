@@ -1,5 +1,5 @@
 ## 1. Implementation
-- [ ] 1.1 Package skeleton: `@hivellm/thunder`, sole runtime dep `@msgpack/msgpack` ^3 (WIRE-031 - NOT msgpackr), tsup ESM+CJS dual build, Node >= 18 engines; tsc + eslint + vitest wiring (PKG-002, PKG-010)
+- [ ] 1.1 Package skeleton: `@hivehub/thunder`, sole runtime dep `@msgpack/msgpack` ^3 (WIRE-031 - NOT msgpackr), tsup ESM+CJS dual build, Node >= 18 engines; tsc + eslint + vitest wiring (PKG-002, PKG-010)
 - [ ] 1.2 Value: discriminated union `{kind, value}` over the 8 variants + factories/accessors per T-014 ergonomics; Int = bigint with number accepted on input for safe ranges; Bytes = Uint8Array
 - [ ] 1.3 Wire codec: array-encoded Request/Response (WIRE-012), externally-tagged value forms incl. the `{"Ok":{"Str":…}}` nesting (WIRE-003), Bytes as msgpack bin (WIRE-010), compact ints + f64 bit-pattern preservation (WIRE-014), PUSH_ID
 - [ ] 1.4 Streaming FrameReader (the Vectorizer codec.ts pattern) with the cap validated against the length prefix before allocation (WIRE-020/021 - closes the T-004 TS gap), partial input + multiple buffered frames (WIRE-022), typed FrameTooLarge/decode errors (WIRE-023)

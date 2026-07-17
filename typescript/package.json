@@ -1,5 +1,5 @@
 {
-  "name": "@hivellm/thunder",
+  "name": "@hivehub/thunder",
   "version": "0.1.0",
   "description": "HiveLLM binary RPC — wire codec + multiplexed client (skeleton; implementation lands at DAG T3.1)",
   "private": true,

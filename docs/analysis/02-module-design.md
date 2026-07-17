@@ -93,7 +93,7 @@ This boundary is exactly where the agent sweeps found the generic/specific line 
 - `thunder-server`: the F-010 pattern with the dispatch trait; metrics as atomics; `Profile`-driven handshake enforcement. Feature-gated `tls` (tokio-rustls, Vectorizer already proves it in-family).
 - **Canonical `Bytes` fix**: `Value::Bytes(Vec<u8>)` must serialize as MessagePack **bin** — use `serde_bytes` (or a manual `serialize_bytes` impl) rather than Synap's seq-of-ints adapter; decode accepts both (T-005).
 
-### TypeScript — `@hivellm/thunder`
+### TypeScript — `@hivehub/thunder`
 
 - Client + wire only; Node `net` socket; ESM+CJS dual build like the existing SDKs.
 - The value type is the discriminated union all three products already converged on independently (`{kind, value}` + factory helpers) — keep it.
@@ -129,7 +129,7 @@ This boundary is exactly where the agent sweeps found the generic/specific line 
 | Registry | Proposed name | Note |
 |---|---|---|
 | crates.io | `thunder-wire`, `thunder-client`, `thunder-server` (or single `hivellm-thunder` with features) | check availability; the per-product `-protocol` crates are **dissolved**, not wrapped — terminal re-export shim for external downstream only, then deleted from the product workspaces (§5) |
-| npm | `@hivellm/thunder` | existing SDKs publish under `@hivehub/*` — decide which org owns shared infra |
+| npm | `@hivehub/thunder` | org resolved: `@hivehub`, the family npm org (decided 2026-07-17) |
 | PyPI | `hivellm-thunder` | import name `thunder_rpc` avoids collision with any `thunder` package |
 | NuGet | `HiveLLM.Thunder` | matches `HiveLLM.Synap.SDK` convention |
 

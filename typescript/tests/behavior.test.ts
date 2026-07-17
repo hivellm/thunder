@@ -3,7 +3,7 @@
  * CLT-090 suite): in-process `node:net` loopback responders built on the
  * wire codec stand in for `thunder-server` — the client contract is
  * exercised end-to-end over real sockets, mirroring the Rust reference
- * suite (`thunder-client/tests/behavior.rs`).
+ * suite (`rust/thunder/tests/behavior.rs`).
  */
 
 import * as net from "node:net";
@@ -239,6 +239,40 @@ test("pipelined calls complete out of order", async () => {
   expect(Value.asStr(await two)).toBe("TWO");
 });
 
+test("five pipelined calls complete in a permuted order", async () => {
+  // With N=2 a "permutation" can only be the swap, which the reversed case
+  // above already covers — and a client that paired replies by arrival
+  // order rather than by id would still pass it. Five calls answered in an
+  // order that is neither submission nor its reverse can only be routed
+  // correctly by the id table (CLT-010/011).
+  const REPLY_ORDER = [2, 0, 4, 1, 3];
+  const commands = ["C1", "C2", "C3", "C4", "C5"];
+
+  const server = await startServer();
+  const client = await connect(server, plainConfig());
+  const conn = await server.nextConn();
+
+  const calls = commands.map((command) => client.call(command));
+  const requests: Request[] = [];
+  for (let i = 0; i < commands.length; i += 1) {
+    requests.push(await conn.nextRequest());
+  }
+  for (const i of REPLY_ORDER) {
+    const request = requests[i];
+    if (request === undefined) throw new Error(`no request buffered at index ${i}`);
+    conn.sendOk(request.id, Value.str(request.command));
+  }
+
+  // Each promise resolves with the value carrying ITS OWN command,
+  // whatever order the server chose to answer in.
+  const results = await Promise.all(calls);
+  results.forEach((result, i) => {
+    expect(Value.asStr(result), `call ${commands[i]} resolved with another call's reply`).toBe(
+      commands[i],
+    );
+  });
+});
+
 test("the in-flight bound backpressures instead of refusing (CLT-012)", async () => {
   const server = await startServer();
   const client = await connect(server, plainConfig({ maxInFlight: 1 }));
@@ -471,6 +505,29 @@ test("a handshake rejection is a typed auth error (CLT-003)", async () => {
 
 // ── Timeouts and cancellation (CLT-020/021) ─────────────────────────────────
 
+/**
+ * TEST-NET-1 (RFC 5737) — reserved for documentation, routable nowhere. A
+ * SYN to it is dropped rather than refused, so the dial hangs and the
+ * connect timeout is what ends it. A closed port on localhost would not do:
+ * that is refused instantly, which is the ConnectionError class, not this
+ * one.
+ */
+const BLACKHOLE_ADDR = "192.0.2.1:9";
+
+test("the connect timeout fires as a typed timeout (CLT-001)", async () => {
+  const started = Date.now();
+  const connecting = Client.connect(BLACKHOLE_ADDR, plainConfig(), {
+    connectTimeoutMs: 150,
+  });
+  // A dial that never completes is the timeout class — not a connection
+  // error, and not a hang.
+  await expect(connecting).rejects.toBeInstanceOf(TimeoutError);
+  expect(
+    Date.now() - started,
+    "the dial must be given the full connect timeout before failing",
+  ).toBeGreaterThanOrEqual(150);
+});
+
 test("the per-call timeout fires and the late response is dropped", async () => {
   const server = await startServer();
   const client = await connect(server, plainConfig());
@@ -556,6 +613,48 @@ test("reconnect after a server drop succeeds", async () => {
   expect(Value.asStr(await second)).toBe("second");
 });
 
+test("a successful reconnect replays the handshake before pending traffic", async () => {
+  const server = await startServer();
+  const helloReply = Value.map([[Value.str("authenticated"), Value.bool(true)]]);
+  // Not awaited yet: connect only resolves once the handshake below is
+  // answered, so the server side has to be served first.
+  const clientPromise = Client.connect(server.addr, helloMandatoryConfig(), {
+    credentials: { type: "apiKey", apiKey: "k" },
+  });
+  void clientPromise.catch(() => undefined);
+
+  const conn1 = await server.nextConn();
+  const hello1 = await conn1.nextRequest();
+  conn1.sendOk(hello1.id, helloReply);
+  const client = await clientPromise;
+  cleanups.push(() => client.close());
+
+  const first = client.call("A");
+  const requestA = await conn1.nextRequest();
+  conn1.sendOk(requestA.id, Value.str("first"));
+  expect(Value.asStr(await first)).toBe("first");
+
+  conn1.destroy();
+  // Let the reader observe the EOF and mark the connection dead.
+  await sleep(200);
+
+  const second = client.call("B");
+  const conn2 = await server.nextConn();
+  // What the re-dialed connection sees, in order: a client that skipped
+  // the handshake would send only the call.
+  const seen: string[] = [];
+  const replayed = await conn2.nextRequest();
+  seen.push(replayed.command);
+  conn2.sendOk(replayed.id, helloReply);
+  const requestB = await conn2.nextRequest();
+  seen.push(requestB.command);
+  conn2.sendOk(requestB.id, Value.str("second"));
+
+  expect(Value.asStr(await second)).toBe("second");
+  // CLT-030: the profile handshake is replayed before the pending call.
+  expect(seen).toEqual(["HELLO", "B"]);
+});
+
 test("reconnect gives up after two attempts with a typed connection error", async () => {
   const server = await startServer();
   const clientPromise = Client.connect(server.addr, helloMandatoryConfig(), {
@@ -632,6 +731,20 @@ test("RESP3 error mapping over the wire", async () => {
   expect(caught).toBeInstanceOf(ServerError);
   expect((caught as ServerError).message).toBe("ERR unknown command 'FOO'");
   expect((caught as ServerError).code).toBeUndefined();
+
+  // CLT-051: the *other* auth prefix is the auth class too — the unit table
+  // pins the parser, this pins it end-to-end over a socket.
+  const auth = client.call("AUTH");
+  void auth.catch(() => undefined);
+  const authRequest = await conn.nextRequest();
+  conn.sendErr(authRequest.id, "WRONGPASS invalid username-password pair");
+  try {
+    await auth;
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught).toBeInstanceOf(AuthError);
+  expect((caught as AuthError).message).toBe("WRONGPASS invalid username-password pair");
 });
 
 test("bracket error mapping over the wire", async () => {
@@ -663,6 +776,21 @@ test("bracket error mapping over the wire", async () => {
     "[collection_not_found] no such collection: docs",
   );
   expect((caught as ServerError).code).toBe("collection_not_found");
+
+  // CLT-051 says "regardless of convention": this config parses bracket
+  // codes, not RESP3 prefixes, and the auth prefix must STILL win over the
+  // wire rather than falling through to the server class.
+  const auth = client.call("AUTH");
+  void auth.catch(() => undefined);
+  const authRequest = await conn.nextRequest();
+  conn.sendErr(authRequest.id, "WRONGPASS invalid username-password pair");
+  try {
+    await auth;
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught).toBeInstanceOf(AuthError);
+  expect((caught as AuthError).message).toBe("WRONGPASS invalid username-password pair");
 });
 
 // ── Push frames (CLT-060) ───────────────────────────────────────────────────

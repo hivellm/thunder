@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 using Xunit;
 
 namespace HiveLLM.Thunder.Tests;
@@ -88,6 +90,46 @@ public class BehaviorTests
         await Task.WhenAll(one, two);
         Assert.Equal("ONE", (await one).AsStr());
         Assert.Equal("TWO", (await two).AsStr());
+        await serverTask;
+    }
+
+    [Fact]
+    public async Task Five_pipelined_calls_complete_in_permuted_order()
+    {
+        // With N=2 a "permutation" can only be the swap, which the reversed
+        // case above already covers — and a client that paired replies by
+        // arrival order rather than by id would still pass it. Five calls
+        // answered in an order that is neither submission nor its reverse
+        // can only be routed correctly by the id table (CLT-010/011).
+        int[] replyOrder = [2, 0, 4, 1, 3];
+        string[] commands = ["C1", "C2", "C3", "C4", "C5"];
+
+        using var server = new MockServer();
+        var serverTask = Task.Run(async () =>
+        {
+            using var conn = await server.AcceptAsync();
+            var requests = new Request[commands.Length];
+            for (var i = 0; i < commands.Length; i++)
+            {
+                requests[i] = await conn.ReadRequestAsync();
+            }
+
+            foreach (var i in replyOrder)
+            {
+                await conn.SendOkAsync(requests[i].Id, Value.Str(requests[i].Command));
+            }
+        });
+
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
+        var calls = commands.Select(command => client.CallAsync(command)).ToArray();
+        var results = await Task.WhenAll(calls);
+        // Each task completes with the value carrying ITS OWN command,
+        // whatever order the server chose to answer in.
+        for (var i = 0; i < commands.Length; i++)
+        {
+            Assert.Equal(commands[i], results[i].AsStr());
+        }
+
         await serverTask;
     }
 
@@ -344,6 +386,29 @@ public class BehaviorTests
 
     // ── Timeouts and cancellation (CLT-020/021) ─────────────────────────
 
+    /// <summary>
+    /// TEST-NET-1 (RFC 5737) — reserved for documentation, routable nowhere.
+    /// A SYN to it is dropped rather than refused, so the dial hangs and the
+    /// connect timeout is what ends it. A closed port on localhost would not
+    /// do: that is refused instantly, which is the connection class, not this
+    /// one.
+    /// </summary>
+    private const string BlackholeAddress = "192.0.2.1:9";
+
+    [Fact]
+    public async Task Connect_timeout_fires_as_typed_timeout()
+    {
+        var config = new ClientConfig { ConnectTimeout = TimeSpan.FromMilliseconds(150) };
+        var started = Stopwatch.StartNew();
+        // CLT-001: a dial that never completes is the timeout class — not a
+        // connection error, and not a hang.
+        await Assert.ThrowsAsync<ThunderTimeoutException>(
+            () => ThunderClient.ConnectAsync(BlackholeAddress, PlainConfig(), config));
+        Assert.True(
+            started.Elapsed >= TimeSpan.FromMilliseconds(150),
+            "the dial must be given the full connect timeout before failing");
+    }
+
     [Fact]
     public async Task Per_call_timeout_fires_and_late_response_is_dropped()
     {
@@ -423,6 +488,48 @@ public class BehaviorTests
     }
 
     [Fact]
+    public async Task Successful_reconnect_replays_the_handshake_before_pending_traffic()
+    {
+        // What the re-dialed connection saw, in order: a client that skipped
+        // the handshake would send only the call.
+        var seen = new List<string>();
+
+        using var server = new MockServer();
+        var serverTask = Task.Run(async () =>
+        {
+            using (var conn = await server.AcceptAsync())
+            {
+                var hello = await conn.ReadRequestAsync();
+                await conn.SendOkAsync(hello.Id, HelloOkReply());
+                var request = await conn.ReadRequestAsync();
+                await conn.SendOkAsync(request.Id, Value.Str("first"));
+            } // connection dropped
+
+            using var redial = await server.AcceptAsync();
+            for (var i = 0; i < 2; i++)
+            {
+                var request = await redial.ReadRequestAsync();
+                seen.Add(request.Command);
+                var reply = request.Command == "HELLO" ? HelloOkReply() : Value.Str("second");
+                await redial.SendOkAsync(request.Id, reply);
+            }
+        });
+
+        await using var client = await ThunderClient.ConnectAsync(
+            server.Address,
+            HelloMandatoryConfig(),
+            new ClientConfig { Credentials = Credentials.ApiKey("k") });
+        Assert.Equal("first", (await client.CallAsync("A")).AsStr());
+        // Let the reader observe the EOF and mark the connection dead.
+        await Task.Delay(200);
+        Assert.Equal("second", (await client.CallAsync("B")).AsStr());
+        await serverTask;
+
+        // CLT-030: the profile handshake is replayed before the pending call.
+        Assert.Equal(new[] { "HELLO", "B" }, seen);
+    }
+
+    [Fact]
     public async Task Reconnect_gives_up_after_two_attempts_with_typed_connection_error()
     {
         using var server = new MockServer();
@@ -473,6 +580,8 @@ public class BehaviorTests
             using var conn = await server.AcceptAsync();
             var get = await conn.ReadRequestAsync();
             await conn.SendErrAsync(get.Id, "NOAUTH Authentication required.");
+            var wrongpass = await conn.ReadRequestAsync();
+            await conn.SendErrAsync(wrongpass.Id, "WRONGPASS invalid username-password pair");
             var foo = await conn.ReadRequestAsync();
             await conn.SendErrAsync(foo.Id, "ERR unknown command 'FOO'");
         });
@@ -480,6 +589,10 @@ public class BehaviorTests
         await using var client = await ThunderClient.ConnectAsync(server.Address, ArglessHelloConfig());
         var auth = await Assert.ThrowsAsync<ThunderAuthException>(() => client.CallAsync("GET"));
         Assert.Equal("NOAUTH Authentication required.", auth.Message);
+        // CLT-051: the *other* auth prefix is the auth class too — the unit
+        // table pins the parser, this pins it end-to-end over a socket.
+        var wrongPass = await Assert.ThrowsAsync<ThunderAuthException>(() => client.CallAsync("AUTH"));
+        Assert.Equal("WRONGPASS invalid username-password pair", wrongPass.Message);
         var serverError = await Assert.ThrowsAsync<ThunderServerException>(
             () => client.CallAsync("FOO"));
         Assert.Equal("ERR unknown command 'FOO'", serverError.Message);
@@ -498,6 +611,8 @@ public class BehaviorTests
             await conn.SendOkAsync(hello.Id, HelloOkReply());
             var search = await conn.ReadRequestAsync();
             await conn.SendErrAsync(search.Id, "[collection_not_found] no such collection: docs");
+            var auth = await conn.ReadRequestAsync();
+            await conn.SendErrAsync(auth.Id, "WRONGPASS invalid username-password pair");
         });
 
         await using var client = await ThunderClient.ConnectAsync(
@@ -506,6 +621,11 @@ public class BehaviorTests
             () => client.CallAsync("SEARCH"));
         Assert.Equal("[collection_not_found] no such collection: docs", error.Message);
         Assert.Equal("collection_not_found", error.Code);
+        // CLT-051 says "regardless of convention": this config parses bracket
+        // codes, not RESP3 prefixes, and the auth prefix must STILL win over
+        // the wire rather than falling through to the server class.
+        var wrongPass = await Assert.ThrowsAsync<ThunderAuthException>(() => client.CallAsync("AUTH"));
+        Assert.Equal("WRONGPASS invalid username-password pair", wrongPass.Message);
         await serverTask;
     }
 

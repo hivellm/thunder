@@ -6,7 +6,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use tokio::io::{AsyncWriteExt, BufReader};
@@ -118,6 +118,48 @@ async fn pipelined_calls_complete_out_of_order() {
     let (one, two) = tokio::join!(client.call("ONE", vec![]), client.call("TWO", vec![]));
     assert_eq!(one.unwrap().as_str(), Some("ONE"));
     assert_eq!(two.unwrap().as_str(), Some("TWO"));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn five_pipelined_calls_complete_in_permuted_order() {
+    // With N=2 a "permutation" can only be the swap, which the reversed
+    // case above already covers — and a client that paired replies by
+    // arrival order rather than by id would still pass it. Five calls
+    // answered in an order that is neither submission nor its reverse can
+    // only be routed correctly by the id table (CLT-010/011).
+    const REPLY_ORDER: [usize; 5] = [2, 0, 4, 1, 3];
+
+    let (listener, addr) = listener().await;
+    let server = tokio::spawn(async move {
+        let (mut r, mut w) = accept_split(&listener).await;
+        let mut reqs = Vec::new();
+        for _ in 0..5 {
+            reqs.push(read_req(&mut r).await);
+        }
+        for i in REPLY_ORDER {
+            let req = &reqs[i];
+            send_ok(&mut w, req.id, Value::Str(req.command.clone())).await;
+        }
+    });
+
+    let client = Client::connect(&addr, plain_profile()).await.unwrap();
+    let (c1, c2, c3, c4, c5) = tokio::join!(
+        client.call("C1", vec![]),
+        client.call("C2", vec![]),
+        client.call("C3", vec![]),
+        client.call("C4", vec![]),
+        client.call("C5", vec![]),
+    );
+    // Each future resolves with the value carrying ITS OWN command,
+    // whatever order the server chose to answer in.
+    for (command, result) in [("C1", c1), ("C2", c2), ("C3", c3), ("C4", c4), ("C5", c5)] {
+        assert_eq!(
+            result.unwrap().as_str(),
+            Some(command),
+            "call {command} resolved with another call's reply"
+        );
+    }
     server.await.unwrap();
 }
 
@@ -393,6 +435,32 @@ async fn handshake_rejection_is_a_typed_auth_error() {
 
 // ── Timeouts (CLT-020) ──────────────────────────────────────────────────
 
+/// TEST-NET-1 (RFC 5737) — reserved for documentation, routable nowhere.
+/// A SYN to it is dropped rather than refused, so the dial hangs and the
+/// connect timeout is what ends it. A closed port on localhost would not
+/// do: that is refused instantly, which is the *connection* class, not
+/// this one.
+const BLACKHOLE_ADDR: &str = "192.0.2.1:9";
+
+#[tokio::test]
+async fn connect_timeout_fires_as_typed_timeout() {
+    let config = ClientConfig::new().connect_timeout(Duration::from_millis(150));
+    let started = std::time::Instant::now();
+    let err = Client::connect_with(BLACKHOLE_ADDR, plain_profile(), config)
+        .await
+        .unwrap_err();
+    // CLT-001: a dial that never completes is the timeout class — not a
+    // connection error, and not a hang.
+    assert!(
+        matches!(err, ClientError::Timeout),
+        "expected the timeout class from an unroutable dial, got {err:?}"
+    );
+    assert!(
+        started.elapsed() >= Duration::from_millis(150),
+        "the dial must be given the full connect timeout before failing"
+    );
+}
+
 #[tokio::test]
 async fn per_call_timeout_fires_and_late_response_is_dropped() {
     let (listener, addr) = listener().await;
@@ -452,6 +520,63 @@ async fn reconnect_after_server_drop_succeeds() {
 }
 
 #[tokio::test]
+async fn successful_reconnect_replays_the_handshake_before_pending_traffic() {
+    let (listener, addr) = listener().await;
+    // What the second connection saw, in order: the re-dial must present a
+    // fresh HELLO before the call that triggered it (CLT-030/002).
+    let second_conn_commands = Arc::new(StdMutex::new(Vec::<String>::new()));
+    let server = tokio::spawn({
+        let seen = Arc::clone(&second_conn_commands);
+        async move {
+            {
+                let (mut r, mut w) = accept_split(&listener).await;
+                let hello = read_req(&mut r).await;
+                send_ok(&mut w, hello.id, hello_ok_reply()).await;
+                let req = read_req(&mut r).await;
+                send_ok(&mut w, req.id, Value::Str("first".to_owned())).await;
+            } // connection dropped
+            let (mut r, mut w) = accept_split(&listener).await;
+            // Read two requests off the re-dialed connection and record
+            // what they were: a client that skipped the handshake would
+            // send only the call.
+            for _ in 0..2 {
+                let req = read_req(&mut r).await;
+                seen.lock().unwrap().push(req.command.clone());
+                let reply = if req.command == "HELLO" {
+                    hello_ok_reply()
+                } else {
+                    Value::Str("second".to_owned())
+                };
+                send_ok(&mut w, req.id, reply).await;
+            }
+        }
+    });
+
+    let config = ClientConfig::new().api_key("k");
+    let client = Client::connect_with(&addr, hello_mandatory_config(), config)
+        .await
+        .unwrap();
+    assert_eq!(
+        client.call("A", vec![]).await.unwrap().as_str(),
+        Some("first")
+    );
+    // Let the reader observe the EOF and mark the connection dead.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        client.call("B", vec![]).await.unwrap().as_str(),
+        Some("second")
+    );
+    server.await.unwrap();
+
+    let seen = second_conn_commands.lock().unwrap();
+    assert_eq!(
+        seen.as_slice(),
+        &["HELLO".to_owned(), "B".to_owned()],
+        "the re-dial must replay the profile handshake before the pending call (CLT-030)"
+    );
+}
+
+#[tokio::test]
 async fn reconnect_gives_up_after_two_attempts_with_typed_connection_error() {
     let (listener, addr) = listener().await;
     let accepts = Arc::new(AtomicUsize::new(0));
@@ -507,6 +632,8 @@ async fn resp3_error_mapping_over_the_wire() {
         let req = read_req(&mut r).await;
         send_err(&mut w, req.id, "NOAUTH Authentication required.").await;
         let req = read_req(&mut r).await;
+        send_err(&mut w, req.id, "WRONGPASS invalid username-password pair").await;
+        let req = read_req(&mut r).await;
         send_err(&mut w, req.id, "ERR unknown command 'FOO'").await;
     });
 
@@ -518,6 +645,15 @@ async fn resp3_error_mapping_over_the_wire() {
         err,
         ClientError::Auth {
             message: "NOAUTH Authentication required.".to_owned()
+        }
+    );
+    // CLT-051: the *other* auth prefix is the auth class too — the unit
+    // table pins the parser, this pins it end-to-end over a socket.
+    let err = client.call("AUTH", vec![]).await.unwrap_err();
+    assert_eq!(
+        err,
+        ClientError::Auth {
+            message: "WRONGPASS invalid username-password pair".to_owned()
         }
     );
     let err = client.call("FOO", vec![]).await.unwrap_err();
@@ -545,6 +681,8 @@ async fn bracket_error_mapping_over_the_wire() {
             "[collection_not_found] no such collection: docs",
         )
         .await;
+        let req = read_req(&mut r).await;
+        send_err(&mut w, req.id, "WRONGPASS invalid username-password pair").await;
     });
 
     let client = Client::connect(&addr, hello_mandatory_config())
@@ -556,6 +694,16 @@ async fn bracket_error_mapping_over_the_wire() {
         ClientError::Server {
             message: "[collection_not_found] no such collection: docs".to_owned(),
             code: Some("collection_not_found".to_owned()),
+        }
+    );
+    // CLT-051 says "regardless of convention": this config parses bracket
+    // codes, not RESP3 prefixes, and the auth prefix must STILL win over
+    // the wire rather than falling through to the server class.
+    let err = client.call("AUTH", vec![]).await.unwrap_err();
+    assert_eq!(
+        err,
+        ClientError::Auth {
+            message: "WRONGPASS invalid username-password pair".to_owned()
         }
     );
     server.await.unwrap();

@@ -100,6 +100,33 @@ async def test_pipelined_calls_complete_out_of_order() -> None:
         await client.close()
 
 
+async def test_five_pipelined_calls_complete_in_permuted_order() -> None:
+    # With N=2 a "permutation" can only be the swap, which the reversed case
+    # above already covers — and a client that paired replies by arrival
+    # order rather than by id would still pass it. Five calls answered in an
+    # order that is neither submission nor its reverse can only be routed
+    # correctly by the id table (CLT-010/011).
+    reply_order = [2, 0, 4, 1, 3]
+    commands = ["C1", "C2", "C3", "C4", "C5"]
+
+    def script(srv: MockServer) -> None:
+        conn = srv.accept()
+        requests = [conn.read_request() for _ in commands]
+        for i in reply_order:
+            conn.send_ok(requests[i].id, Value.str(requests[i].command))
+
+    with MockServer(script) as srv:
+        client = await AsyncClient.connect(srv.address, plain_config())
+        results = await asyncio.gather(*(client.call(c) for c in commands))
+        # Each call returns the value carrying ITS OWN command, whatever
+        # order the server chose to answer in.
+        for command, result in zip(commands, results):
+            assert result.as_str() == command, (
+                f"call {command} resolved with another call's reply"
+            )
+        await client.close()
+
+
 async def test_in_flight_bound_backpressures_instead_of_refusing() -> None:
     def script(srv: MockServer) -> None:
         conn = srv.accept()
@@ -312,6 +339,29 @@ async def test_handshake_rejection_is_a_typed_auth_error() -> None:
 
 # -- Timeouts and cancellation (CLT-020/021) --------------------------------------
 
+#: TEST-NET-1 (RFC 5737) — reserved for documentation, routable nowhere. A
+#: SYN to it is dropped rather than refused, so the dial hangs and the
+#: connect timeout is what ends it. A closed port on localhost would not do:
+#: that is refused instantly, which is the ConnectionError class, not this
+#: one.
+BLACKHOLE_ADDR = "192.0.2.1:9"
+
+
+async def test_connect_timeout_fires_as_typed_timeout() -> None:
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    with pytest.raises(errors.TimeoutError):
+        # CLT-001: a dial that never completes is the timeout class — not a
+        # connection error, and not a hang.
+        await AsyncClient.connect(
+            BLACKHOLE_ADDR,
+            plain_config(),
+            ClientConfig(connect_timeout=0.15),
+        )
+    assert loop.time() - started >= 0.15, (
+        "the dial must be given the full connect timeout before failing"
+    )
+
 
 async def test_per_call_timeout_fires_and_late_response_is_dropped() -> None:
     def script(srv: MockServer) -> None:
@@ -379,6 +429,48 @@ async def test_reconnect_after_server_drop_succeeds() -> None:
         await client.close()
 
 
+async def test_successful_reconnect_replays_the_handshake_before_pending_traffic() -> (
+    None
+):
+    # What the re-dialed connection saw, in order: a client that skipped the
+    # handshake would send only the call.
+    seen: list[str] = []
+
+    def script(srv: MockServer) -> None:
+        conn = srv.accept()
+        hello = conn.read_request()
+        conn.send_ok(hello.id, hello_ok_reply())
+        request = conn.read_request()
+        conn.send_ok(request.id, Value.str("first"))
+        conn.close()  # connection dropped
+        conn = srv.accept()
+        for _ in range(2):
+            request = conn.read_request()
+            seen.append(request.command)
+            reply = (
+                hello_ok_reply()
+                if request.command == "HELLO"
+                else Value.str("second")
+            )
+            conn.send_ok(request.id, reply)
+
+    with MockServer(script) as srv:
+        client = await AsyncClient.connect(
+            srv.address,
+            hello_mandatory_config(),
+            ClientConfig(credentials=Credentials.api_key("k")),
+        )
+        first = await client.call("A")
+        assert first.as_str() == "first"
+        await asyncio.sleep(0.3)  # let the reader observe the EOF
+        second = await client.call("B")
+        assert second.as_str() == "second"
+        await client.close()
+
+    # CLT-030: the profile handshake is replayed before the pending call.
+    assert seen == ["HELLO", "B"]
+
+
 async def test_reconnect_gives_up_after_two_attempts_with_typed_connection_error() -> (
     None
 ):
@@ -417,6 +509,8 @@ async def test_resp3_error_mapping_over_the_wire() -> None:
         request = conn.read_request()
         conn.send_err(request.id, "NOAUTH Authentication required.")
         request = conn.read_request()
+        conn.send_err(request.id, "WRONGPASS invalid username-password pair")
+        request = conn.read_request()
         conn.send_err(request.id, "ERR unknown command 'FOO'")
 
     with MockServer(script) as srv:
@@ -424,6 +518,11 @@ async def test_resp3_error_mapping_over_the_wire() -> None:
         with pytest.raises(errors.AuthError) as auth_info:
             await client.call("GET")
         assert auth_info.value.message == "NOAUTH Authentication required."
+        # CLT-051: the *other* auth prefix is the auth class too — the unit
+        # table pins the parser, this pins it end-to-end over a socket.
+        with pytest.raises(errors.AuthError) as wrongpass_info:
+            await client.call("AUTH")
+        assert wrongpass_info.value.message == "WRONGPASS invalid username-password pair"
         with pytest.raises(errors.ServerError) as server_info:
             await client.call("FOO")
         assert server_info.value.message == "ERR unknown command 'FOO'"
@@ -438,6 +537,8 @@ async def test_bracket_error_mapping_over_the_wire() -> None:
         conn.send_ok(hello.id, hello_ok_reply())
         request = conn.read_request()
         conn.send_err(request.id, "[collection_not_found] no such collection: docs")
+        request = conn.read_request()
+        conn.send_err(request.id, "WRONGPASS invalid username-password pair")
 
     with MockServer(script) as srv:
         client = await AsyncClient.connect(srv.address, hello_mandatory_config())
@@ -447,6 +548,12 @@ async def test_bracket_error_mapping_over_the_wire() -> None:
             excinfo.value.message == "[collection_not_found] no such collection: docs"
         )
         assert excinfo.value.code == "collection_not_found"
+        # CLT-051 says "regardless of convention": this config parses bracket
+        # codes, not RESP3 prefixes, and the auth prefix must STILL win over
+        # the wire rather than falling through to the server class.
+        with pytest.raises(errors.AuthError) as wrongpass_info:
+            await client.call("AUTH")
+        assert wrongpass_info.value.message == "WRONGPASS invalid username-password pair"
         await client.close()
 
 

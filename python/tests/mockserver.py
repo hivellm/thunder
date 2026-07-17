@@ -1,6 +1,6 @@
 """Scripted loopback TCP responders for the behavioral floor tests
 (SPEC-003 / CLT-090) — the Python mirror of the tokio responders in
-``rust/thunder-client/tests/behavior.rs``. Built on the thunder_rpc wire
+``rust/thunder/tests/behavior.rs``. Built on the thunder_rpc wire
 codec; serves both the sync and the asyncio client (the server side is
 always a plain thread)."""
 

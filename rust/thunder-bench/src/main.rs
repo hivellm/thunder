@@ -24,6 +24,10 @@ OPTIONS:
     --warmup <n>             discarded warmup ops per cell (default: 200)
     --reps <n>               repetitions per cell, >= 1 (default: 3)
     --label <name>           artifact file stem (default: run-<unix-timestamp>)
+    --diagnostic             include the thunder-stripped lane (bare-wire
+                             listener, same client) — isolates what the
+                             server's features cost from what the wire costs.
+                             Never a G5 lane.
     --serve-resp3 <port>     BEN-003 calibration: serve the RESP3 lane on
                              0.0.0.0:<port> until killed, so an external
                              client (redis-benchmark) can drive the very same
@@ -40,6 +44,7 @@ struct Args {
     cfg: RunConfig,
     label: Option<String>,
     serve_resp3: Option<u16>,
+    diagnostic: bool,
     help: bool,
 }
 
@@ -51,6 +56,7 @@ impl Default for Args {
             cfg: RunConfig::default(),
             label: None,
             serve_resp3: None,
+            diagnostic: false,
             help: false,
         }
     }
@@ -66,6 +72,7 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Args, String> {
             "--warmup" => args.cfg.warmup = need_number(&mut argv, "--warmup", 0)?,
             "--reps" => args.cfg.repetitions = need_number(&mut argv, "--reps", 1)?,
             "--label" => args.label = Some(need_value(&mut argv, "--label")?),
+            "--diagnostic" => args.diagnostic = true,
             "--serve-resp3" => {
                 args.serve_resp3 = Some(need_number(&mut argv, "--serve-resp3", 1)? as u16)
             }
@@ -194,6 +201,17 @@ fn serve_resp3(port: u16) -> ExitCode {
     })
 }
 
+/// The G5 lanes, plus the bare-wire diagnostic when `--diagnostic` asks for
+/// it. The diagnostic is never in the default set: a lane Thunder "beats" by
+/// dropping its own guarantees would be a meaningless win.
+fn lane_set(args: &Args) -> &'static [Lane] {
+    if args.diagnostic {
+        &Lane::ALL_WITH_DIAGNOSTIC
+    } else {
+        &Lane::ALL
+    }
+}
+
 async fn run(args: &Args, selected: &[&'static Scenario]) -> Result<(PathBuf, PathBuf), String> {
     let environment = Environment::capture();
     let label = args
@@ -224,7 +242,7 @@ async fn run(args: &Args, selected: &[&'static Scenario]) -> Result<(PathBuf, Pa
             cells.extend(results);
             continue;
         }
-        for lane in Lane::ALL {
+        for &lane in lane_set(args) {
             let results = run_scenario(&targets, scenario, lane, &args.cfg).await?;
             for cell in &results {
                 eprintln!("{}", cell.one_line());
@@ -234,7 +252,10 @@ async fn run(args: &Args, selected: &[&'static Scenario]) -> Result<(PathBuf, Pa
     }
     targets.stop().await;
 
-    let lanes = Lane::ALL.iter().map(|l| l.as_str().to_owned()).collect();
+    let lanes = lane_set(args)
+        .iter()
+        .map(|l| l.as_str().to_owned())
+        .collect();
     let artifact = Artifact::new(environment, &args.cfg, selected, lanes, cells);
     write_artifact(&artifact, &args.out, &label).map_err(|e| format!("artifact write failed: {e}"))
 }

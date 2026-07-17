@@ -31,15 +31,15 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::{oneshot, Mutex as TokioMutex, Semaphore};
+use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex, Semaphore};
 use tokio::task::JoinHandle;
 
 use crate::wire::config::{Handshake, HelloStyle, PushPolicy};
 use crate::wire::{
-    read_response_with_limit, write_request, Config, Request, Response, Value, PUSH_ID,
+    encode_frame, read_response_with_limit, Config, Request, Response, Value, PUSH_ID,
 };
 
 use crate::client::endpoint::{parse_endpoint, Endpoint};
@@ -190,13 +190,20 @@ impl ConnShared {
     }
 }
 
-/// One live connection: write half + demux state + the reader task.
+/// One live connection: the write queue + demux state + the two tasks.
 struct Conn {
     shared: Arc<ConnShared>,
-    /// Writes serialize behind this mutex so frames never interleave
-    /// (CLT-011); reads belong to the reader task alone.
-    writer: TokioMutex<OwnedWriteHalf>,
+    /// Encoded request frames queued for the writer task (CLT-011).
+    ///
+    /// A single writer owns the socket, so frames can never interleave —
+    /// a stronger guarantee than the mutex this replaced, and the reason
+    /// callers no longer contend at all. The writer coalesces everything
+    /// already queued into one flush (the SRV-006 drain-then-flush pattern
+    /// the server has always had); at pipeline depth that turns N syscalls
+    /// into one, which is what the T4.3 matrix showed Thunder paying for.
+    write_tx: mpsc::Sender<Vec<u8>>,
     reader_task: JoinHandle<()>,
+    writer_task: JoinHandle<()>,
 }
 
 impl Conn {
@@ -204,11 +211,45 @@ impl Conn {
         self.shared.alive.load(Ordering::SeqCst)
     }
 
-    /// Tear down: stop the reader and fail all pending calls typed.
+    /// Tear down: stop both tasks and fail all pending calls typed.
     fn kill(&self, err: &ClientError) {
         self.reader_task.abort();
+        self.writer_task.abort();
         self.shared.poison(err);
     }
+}
+
+/// The connection's writer task: own the socket, coalesce, flush once.
+///
+/// Mirrors `thunder::server`'s SRV-006 hot path — write the frame that woke
+/// us, drain every frame already queued via `try_recv`, then flush a single
+/// time. A poisoned write kills the connection so every pending call fails
+/// typed (CLT-014).
+async fn writer_loop(
+    write_half: OwnedWriteHalf,
+    mut rx: mpsc::Receiver<Vec<u8>>,
+    shared: Arc<ConnShared>,
+) {
+    let mut writer = BufWriter::new(write_half);
+    while let Some(frame) = rx.recv().await {
+        if writer.write_all(&frame).await.is_err() {
+            break;
+        }
+        // Drain-then-flush: everything already queued rides the same syscall.
+        while let Ok(next) = rx.try_recv() {
+            if writer.write_all(&next).await.is_err() {
+                shared.poison(&ClientError::Connection {
+                    message: "write failed".to_owned(),
+                });
+                return;
+            }
+        }
+        if writer.flush().await.is_err() {
+            break;
+        }
+    }
+    let _ = writer.flush().await;
+    let _ = writer.shutdown().await;
 }
 
 impl Drop for Conn {
@@ -368,9 +409,9 @@ impl Client {
         self.in_flight.close();
         let conn = lock(&self.conn).take();
         if let Some(conn) = conn {
+            // Dropping the sender ends the writer loop, which flushes and
+            // shuts the socket down on its way out.
             conn.kill(&Self::closed_error());
-            let mut writer = conn.writer.lock().await;
-            let _ = writer.shutdown().await;
         }
     }
 
@@ -503,10 +544,16 @@ impl Client {
             Arc::clone(&self.push_handler),
             Arc::clone(&self.unknown_drops),
         ));
+        // Bounded so a caller that outruns the socket waits here rather
+        // than growing an unbounded queue; the in-flight semaphore
+        // (CLT-012) already bounds how many can be waiting.
+        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(1024);
+        let writer_task = tokio::spawn(writer_loop(write_half, write_rx, Arc::clone(&shared)));
         let conn = Arc::new(Conn {
             shared,
-            writer: TokioMutex::new(write_half),
+            write_tx,
             reader_task,
+            writer_task,
         });
         // On handshake failure the `Err` return drops `conn`, whose Drop
         // aborts the reader and closes the socket.
@@ -648,16 +695,26 @@ impl Client {
             command: command.to_owned(),
             args,
         };
-        {
-            let mut writer = conn.writer.lock().await;
-            if let Err(e) = write_request(&mut *writer, &request).await {
+        // Encode once, hand the frame to the writer task: no caller ever
+        // touches the socket, so N concurrent calls cost one flush instead
+        // of N syscalls (CLT-011).
+        let frame = match encode_frame(&request) {
+            Ok(frame) => frame,
+            Err(e) => {
                 lock(&conn.shared.pending).remove(&id);
                 let err = ClientError::Connection {
-                    message: format!("write failed: {e}"),
+                    message: format!("encode failed: {e}"),
                 };
-                conn.kill(&err);
                 return Err(DispatchError::WriteFailed(err));
             }
+        };
+        if conn.write_tx.send(frame).await.is_err() {
+            lock(&conn.shared.pending).remove(&id);
+            let err = ClientError::Connection {
+                message: "write failed: connection closed".to_owned(),
+            };
+            conn.kill(&err);
+            return Err(DispatchError::WriteFailed(err));
         }
         match tokio::time::timeout(timeout, rx).await {
             // CLT-020: remove the pending entry on timeout; a late

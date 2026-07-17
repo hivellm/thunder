@@ -43,6 +43,7 @@ use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHan
 use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
 use crate::stats::{compute, dispersion, CellStats, Dispersion};
+use crate::stripped::{spawn_stripped_listener, StrippedHandle};
 
 /// The config this application (the bench harness) defines for itself —
 /// the worked example of Thunder's model: start from the standard, override
@@ -76,6 +77,11 @@ pub enum Lane {
     Bolt,
     /// Raw HTTP/1.1 + JSON against the hand-rolled listener.
     Http,
+    /// **Diagnostic, not a G5 lane**: Thunder's wire on a bare listener
+    /// ([`crate::stripped`]) driven by the same Thunder client. Isolates what
+    /// the server's features cost from what the wire costs — see that
+    /// module's docs. Excluded from [`Lane::ALL`] on purpose.
+    ThunderStripped,
 }
 
 impl Lane {
@@ -86,12 +92,24 @@ impl Lane {
             Self::Resp3 => "resp3",
             Self::Bolt => "bolt",
             Self::Http => "http",
+            Self::ThunderStripped => "thunder-stripped",
         }
     }
 
-    /// Every lane, artifact order — Thunder first, then the peers it must
-    /// beat in every cell (BEN-020 / gate G5).
+    /// Every G5 lane, artifact order — Thunder first, then the peers it must
+    /// beat in every cell (BEN-020 / gate G5). `ThunderStripped` is absent by
+    /// design: it is a diagnostic, and a lane Thunder "beats" by dropping its
+    /// own guarantees would be a meaningless win.
     pub const ALL: [Lane; 4] = [Lane::Thunder, Lane::Resp3, Lane::Bolt, Lane::Http];
+
+    /// The G5 lanes plus the [`Lane::ThunderStripped`] diagnostic.
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 5] = [
+        Lane::Thunder,
+        Lane::Resp3,
+        Lane::Bolt,
+        Lane::Http,
+        Lane::ThunderStripped,
+    ];
 }
 
 /// Run discipline knobs (BEN-011).
@@ -176,6 +194,8 @@ pub struct Targets {
     pub bolt: BoltHandle,
     /// The HTTP/1.1 listener handle.
     pub http: HttpHandle,
+    /// The bare-wire diagnostic listener handle ([`crate::stripped`]).
+    pub stripped: StrippedHandle,
 }
 
 impl Targets {
@@ -185,6 +205,7 @@ impl Targets {
         self.resp3.stop().await;
         self.bolt.stop().await;
         self.http.stop().await;
+        self.stripped.stop().await;
     }
 }
 
@@ -205,12 +226,14 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     .await?;
     let resp3 = spawn_resp3_listener(Arc::clone(&backend), loopback).await?;
     let bolt = spawn_bolt_listener(Arc::clone(&backend), loopback).await?;
-    let http = spawn_http_listener(backend, loopback).await?;
+    let http = spawn_http_listener(Arc::clone(&backend), loopback).await?;
+    let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
         resp3,
         bolt,
         http,
+        stripped,
     })
 }
 
@@ -234,6 +257,10 @@ pub async fn run_scenario(
                 Lane::Resp3 => crate::resp3::storm(&targets.resp3, storms, cfg).await?,
                 Lane::Bolt => crate::bolt::storm(&targets.bolt, storms, cfg).await?,
                 Lane::Http => http_storm(targets, storms, cfg).await?,
+                Lane::ThunderStripped => {
+                    thunder_storm_at(&targets.stripped.local_addr().to_string(), storms, cfg)
+                        .await?
+                }
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -253,6 +280,7 @@ pub async fn run_scenario(
                     Lane::Resp3 => crate::resp3::cell(&targets.resp3, &spec, cfg).await?,
                     Lane::Bolt => crate::bolt::cell(&targets.bolt, &spec, cfg).await?,
                     Lane::Http => http_cell(targets, &spec, cfg).await?,
+                    Lane::ThunderStripped => stripped_cell(targets, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }
@@ -352,9 +380,48 @@ async fn thunder_cell(
     cfg: &RunConfig,
 ) -> Result<Measured, String> {
     let addr = targets.thunder.local_addr().to_string();
+    let before = targets.thunder.snapshot();
+    let reps = thunder_reps(&addr, spec, cfg).await?;
+    let after = targets.thunder.snapshot();
+    let ops = (after.commands_total - before.commands_total).max(1) as f64;
+    Ok((
+        reps,
+        (after.frame_bytes_in_total - before.frame_bytes_in_total) as f64 / ops,
+        (after.frame_bytes_out_total - before.frame_bytes_out_total) as f64 / ops,
+    ))
+}
+
+/// The [`Lane::ThunderStripped`] diagnostic: the identical Thunder client
+/// against the bare-wire listener, so the only difference from
+/// [`thunder_cell`] is what the server does per request.
+async fn stripped_cell(
+    targets: &Targets,
+    spec: &CellSpec,
+    cfg: &RunConfig,
+) -> Result<Measured, String> {
+    let addr = targets.stripped.local_addr().to_string();
+    let before = targets.stripped.snapshot();
+    let reps = thunder_reps(&addr, spec, cfg).await?;
+    let after = targets.stripped.snapshot();
+    let ops = (after.requests - before.requests).max(1) as f64;
+    Ok((
+        reps,
+        (after.bytes_in - before.bytes_in) as f64 / ops,
+        (after.bytes_out - before.bytes_out) as f64 / ops,
+    ))
+}
+
+/// Warmup + N measured repetitions of the Thunder client against `addr` —
+/// shared by the real and stripped lanes so the client side is provably
+/// identical between them.
+async fn thunder_reps(
+    addr: &str,
+    spec: &CellSpec,
+    cfg: &RunConfig,
+) -> Result<Vec<CellStats>, String> {
     let mut clients = Vec::with_capacity(spec.connections);
     for _ in 0..spec.connections {
-        let client = Client::connect(&addr, bench_profile())
+        let client = Client::connect(addr, bench_profile())
             .await
             .map_err(|e| format!("thunder connect failed: {e}"))?;
         clients.push(Arc::new(client));
@@ -363,23 +430,15 @@ async fn thunder_cell(
     if cfg.warmup > 0 {
         let _ = thunder_window(&clients, spec, cfg.warmup).await?;
     }
-    let before = targets.thunder.snapshot();
     let mut reps = Vec::with_capacity(cfg.repetitions);
     for _ in 0..cfg.repetitions {
         let (mut lats, elapsed) = thunder_window(&clients, spec, cfg.ops).await?;
         reps.push(compute(&mut lats, elapsed));
     }
-    let after = targets.thunder.snapshot();
     for client in &clients {
         client.close().await;
     }
-
-    let ops = (after.commands_total - before.commands_total).max(1) as f64;
-    Ok((
-        reps,
-        (after.frame_bytes_in_total - before.frame_bytes_in_total) as f64 / ops,
-        (after.frame_bytes_out_total - before.frame_bytes_out_total) as f64 / ops,
-    ))
+    Ok(reps)
 }
 
 /// One continuously-full window: `depth` workers per client, each looping
@@ -450,6 +509,26 @@ async fn thunder_storm(
         (after.frame_bytes_in_total - before.frame_bytes_in_total) as f64 / ops,
         (after.frame_bytes_out_total - before.frame_bytes_out_total) as f64 / ops,
     ))
+}
+
+/// The storm on the bare-wire diagnostic listener — same client, same shape.
+async fn thunder_storm_at(addr: &str, storms: usize, cfg: &RunConfig) -> Result<Measured, String> {
+    for _ in 0..cfg.warmup.min(storms) {
+        thunder_storm_once(addr).await?;
+    }
+    let mut reps = Vec::with_capacity(cfg.repetitions);
+    for _ in 0..cfg.repetitions {
+        let mut lats = Vec::with_capacity(storms);
+        let started = Instant::now();
+        for _ in 0..storms {
+            lats.push(thunder_storm_once(addr).await?);
+        }
+        reps.push(compute(&mut lats, started.elapsed()));
+    }
+    // The bare listener keeps no per-op byte split for storms; the storm cell
+    // measures connection setup, and the byte columns are reported by the
+    // real lanes.
+    Ok((reps, 0.0, 0.0))
 }
 
 async fn thunder_storm_once(addr: &str) -> Result<Duration, String> {

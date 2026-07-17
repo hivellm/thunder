@@ -54,6 +54,7 @@ pub mod http;
 pub mod resp3;
 pub mod scenarios;
 pub mod stats;
+pub mod stripped;
 
 pub use driver::bench_profile;
 pub use thunder::wire;

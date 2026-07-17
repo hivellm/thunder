@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["thunder-wire", "thunder-client", "thunder-server", "thunder-bench"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/hivellm/thunder"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+rmp-serde = "1.3"
+serde_bytes = "0.11"
+thiserror = "2"
+tokio = { version = "1", features = ["net", "io-util", "rt", "sync", "macros", "time"] }
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

@@ -1,0 +1,10 @@
+name: request-ping
+group: canonical
+mode: bidirectional
+frame_hex: "08 00 00 00 93 01 a4 50 49 4e 47 90"
+decoded:
+  kind: request
+  id: 1
+  command: PING
+  args: []
+notes: "Family-pinned canonical vector (VECTORIZER_RPC.md §11). Covers WIRE-001, WIRE-012."

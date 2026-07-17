@@ -1,0 +1,10 @@
+name: lexum
+scheme: lexum
+default_port: 17001
+handshake: hello_mandatory
+hello_style: map_payload
+push: reserved
+max_frame_bytes: 67108864
+max_in_flight: 256
+error_codes: both          # bracket_code (SPEC-003 codes) + resp3 auth prefixes
+tls: reserved_config       # config keys reserved; rustls when demanded

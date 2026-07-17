@@ -1,0 +1,14 @@
+[package]
+name = "thunder-bench"
+description = "Transport shootout harness - Thunder vs RESP3 vs Bolt vs HTTP (placeholder until DAG T1.6)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+thunder-wire = { path = "../thunder-wire", version = "0.1.0" }
+
+[lints]
+workspace = true

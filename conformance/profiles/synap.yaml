@@ -1,0 +1,10 @@
+name: synap
+scheme: synap
+default_port: 15501
+handshake: none            # v1 legacy: no RPC-layer auth (PRO-001)
+hello_style: null
+push: enabled              # SUBSCRIBE ships push frames with id = u32::MAX
+max_frame_bytes: 536870912 # 512 MiB — matches synap-protocol MAX_FRAME_SIZE
+max_in_flight: 256
+error_codes: resp3_prefixes
+tls: off

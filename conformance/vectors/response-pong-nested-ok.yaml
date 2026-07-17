@@ -1,0 +1,11 @@
+name: response-pong-nested-ok
+group: canonical
+mode: bidirectional
+frame_hex: "10 00 00 00 92 01 81 a2 4f 6b 81 a3 53 74 72 a4 50 4f 4e 47"
+decoded:
+  kind: response
+  id: 1
+  ok:
+    type: str
+    value: PONG
+notes: "The nested {\"Ok\":{\"Str\":\"PONG\"}} double-map trap. Covers WIRE-003."

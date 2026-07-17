@@ -1,0 +1,25 @@
+[package]
+name = "thunder-wire"
+description = "HiveLLM binary RPC wire layer - value model, Request/Response, length-prefixed MessagePack frame codec (wire v1, frozen)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+serde_bytes = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+default = []
+tokio = ["dep:tokio"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+serde_yaml = "0.9"
+
+[lints]
+workspace = true

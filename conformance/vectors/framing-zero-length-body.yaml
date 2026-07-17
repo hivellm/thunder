@@ -1,0 +1,6 @@
+name: framing-zero-length-body
+group: framing
+mode: reject
+frame_hex: "00 00 00 00"
+error: decode
+notes: "A zero-length body is a complete frame with malformed (empty) MessagePack: typed decode error, no panic. Covers WIRE-023."

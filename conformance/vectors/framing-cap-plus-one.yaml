@@ -1,0 +1,6 @@
+name: framing-cap-plus-one
+group: framing
+mode: reject
+frame_hex: "01 00 00 04"
+error: frame_too_large
+notes: "Prefix alone declares 64 MiB + 1 (0x04000001 LE) with no body present: the cap check must fire before any body allocation. Covers WIRE-020/021."

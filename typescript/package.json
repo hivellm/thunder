@@ -1,0 +1,15 @@
+{
+  "name": "@hivellm/thunder",
+  "version": "0.1.0",
+  "description": "HiveLLM binary RPC — wire codec + multiplexed client (skeleton; implementation lands at DAG T3.1)",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

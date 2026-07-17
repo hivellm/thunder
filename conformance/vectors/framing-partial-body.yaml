@@ -1,0 +1,5 @@
+name: framing-partial-body
+group: framing
+mode: incomplete
+frame_hex: "08 00 00 00 93 01 a4 50"
+notes: "Prefix declares 8 body bytes, only 4 present: ask for more. Covers WIRE-022."

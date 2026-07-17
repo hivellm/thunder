@@ -1,0 +1,10 @@
+name: nexus
+scheme: nexus
+default_port: 15475
+handshake: auth_command    # HELLO optional; AUTH [api_key] | [user, pass]; pre-auth allowlist PING/HELLO/AUTH/QUIT
+hello_style: positional_version
+push: reserved
+max_frame_bytes: 67108864  # 64 MiB, operator-configurable (rpc.max_frame_bytes)
+max_in_flight: 1024
+error_codes: resp3_prefixes
+tls: off

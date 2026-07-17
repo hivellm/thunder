@@ -1,0 +1,5 @@
+name: framing-partial-header
+group: framing
+mode: incomplete
+frame_hex: "08 00"
+notes: "Two of four prefix bytes: decoder must ask for more, never error. Covers WIRE-022."

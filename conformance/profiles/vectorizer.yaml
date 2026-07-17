@@ -1,0 +1,10 @@
+name: vectorizer
+scheme: vectorizer
+default_port: 15503
+handshake: hello_mandatory # HELLO must be the first frame
+hello_style: map_payload   # {version, token | api_key, client_name}; reply carries capabilities
+push: reserved
+max_frame_bytes: 67108864
+max_in_flight: 256
+error_codes: bracket_code  # "[<code>] message" prefix
+tls: optional_rustls

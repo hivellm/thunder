@@ -43,22 +43,30 @@ jobs:
       - run: npm run typecheck
 
   python:
-    name: python (skeleton)
+    name: python
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install
+        run: pip install ./python
       - name: Import check
-        run: python -c "import sys; sys.path.insert(0, 'python'); import thunder_rpc; assert thunder_rpc.WIRE_VERSION == 1"
+        run: python -c "import thunder_rpc; assert thunder_rpc.WIRE_VERSION == 1"
 
   csharp:
-    name: csharp (skeleton)
+    name: csharp
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: csharp
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
-      - run: dotnet build csharp/HiveLLM.Thunder -warnaserror
+      - name: Build
+        run: dotnet build -warnaserror
+      - name: Test (includes the conformance corpus — TST-020/021)
+        run: dotnet test --no-build

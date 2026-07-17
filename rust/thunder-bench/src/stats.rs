@@ -60,6 +60,10 @@ pub struct Dispersion {
     pub mean: f64,
     /// Largest repetition value.
     pub max: f64,
+    /// Relative spread, `(max - min) / mean * 100`. The number the noise floor
+    /// judges: it is dispersion expressed on the same scale as the BEN-020
+    /// margin, so the two can be compared directly. `0.0` when `mean` is 0.
+    pub spread_pct: f64,
 }
 
 /// Compute [`Dispersion`] over one metric across repetitions. Returns
@@ -78,11 +82,99 @@ pub fn dispersion<I: IntoIterator<Item = f64>>(values: I) -> Option<Dispersion> 
     if count == 0 {
         return None;
     }
+    let mean = sum / count as f64;
     Some(Dispersion {
         min,
-        mean: sum / count as f64,
+        mean,
         max,
+        spread_pct: if mean.abs() > f64::EPSILON {
+            (max - min) / mean * 100.0
+        } else {
+            0.0
+        },
     })
+}
+
+/// The noise floor a run must clear before any cell of it may be judged
+/// (BEN-011 + BEN-020).
+///
+/// **Why this exists, and why it fails the run instead of annotating it.**
+/// The harness reported dispersion from the start and nothing consumed it. It
+/// was possible — and it happened — to publish a per-cell G5 verdict from a
+/// matrix whose untouched peer lanes had moved +95%/+75%/+45% between runs and
+/// whose worst cells swung 43 points. Every one of those numbers was in the
+/// artifact; none of them stopped the verdict being written.
+///
+/// A number that is reported but cannot fail anything is decoration. BEN-020
+/// asks whether Thunder leads by **≥10%**; a cell whose own repetitions
+/// disagree by more than that margin cannot answer the question in either
+/// direction, so the honest outcome is to refuse the run, not to round it off.
+pub const DEFAULT_NOISE_FLOOR_PCT: f64 = 5.0;
+
+/// The margin BEN-020 requires Thunder to lead every peer by, in percent.
+/// [`DEFAULT_NOISE_FLOOR_PCT`] must stay below it — a run whose own noise is as
+/// wide as the margin can manufacture the gate in either direction.
+pub const BEN_020_MARGIN_PCT: f64 = 10.0;
+
+/// One cell that failed the noise floor.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct NoisyCell {
+    /// Scenario name.
+    pub scenario: String,
+    /// Lane key.
+    pub lane: String,
+    /// Pipeline depth.
+    pub depth: usize,
+    /// Connection count.
+    pub connections: usize,
+    /// The qps spread that busted the floor.
+    pub spread_pct: f64,
+}
+
+/// The verdict on a whole run's stability.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct NoiseVerdict {
+    /// The floor applied.
+    pub floor_pct: f64,
+    /// Cells whose qps spread exceeded the floor, worst first.
+    pub offenders: Vec<NoisyCell>,
+}
+
+impl NoiseVerdict {
+    /// Whether the run is quiet enough for its cells to mean anything.
+    pub fn is_quiet(&self) -> bool {
+        self.offenders.is_empty()
+    }
+
+    /// The worst spread seen, if any cell busted the floor.
+    pub fn worst_spread_pct(&self) -> Option<f64> {
+        self.offenders.first().map(|c| c.spread_pct)
+    }
+}
+
+/// Judge a run: any cell whose qps spread across repetitions exceeds `floor_pct`
+/// makes the run unfit to answer BEN-020. Offenders come back worst-first.
+///
+/// Cells with a single repetition have no spread to measure and are skipped —
+/// they are not evidence of quiet, so `repetitions: 1` cannot pass this check
+/// by vacuum; the runner refuses that separately.
+pub fn noise_check<I>(cells: I, floor_pct: f64) -> NoiseVerdict
+where
+    I: IntoIterator<Item = NoisyCell>,
+{
+    let mut offenders: Vec<NoisyCell> = cells
+        .into_iter()
+        .filter(|c| c.spread_pct > floor_pct)
+        .collect();
+    offenders.sort_by(|a, b| {
+        b.spread_pct
+            .partial_cmp(&a.spread_pct)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    NoiseVerdict {
+        floor_pct,
+        offenders,
+    }
 }
 
 #[cfg(test)]
@@ -149,10 +241,73 @@ mod tests {
         assert_eq!(d.min, 2.0);
         assert_eq!(d.mean, 4.0);
         assert_eq!(d.max, 6.0);
+        // (6 - 2) / 4 = 100%.
+        assert_eq!(d.spread_pct, 100.0);
     }
 
     #[test]
     fn dispersion_of_empty_is_none() {
         assert!(dispersion(std::iter::empty()).is_none());
+    }
+
+    #[test]
+    fn identical_repetitions_have_no_spread() {
+        let d = dispersion([50.0, 50.0, 50.0]).unwrap();
+        assert_eq!(d.spread_pct, 0.0);
+    }
+
+    #[test]
+    fn zero_mean_reports_zero_spread_rather_than_dividing_by_zero() {
+        let d = dispersion([0.0, 0.0]).unwrap();
+        assert_eq!(d.spread_pct, 0.0);
+        assert!(d.spread_pct.is_finite());
+    }
+
+    fn cell(scenario: &str, spread_pct: f64) -> NoisyCell {
+        NoisyCell {
+            scenario: scenario.to_owned(),
+            lane: "thunder".to_owned(),
+            depth: 1,
+            connections: 1,
+            spread_pct,
+        }
+    }
+
+    #[test]
+    fn a_quiet_run_has_no_offenders() {
+        let v = noise_check([cell("point-echo-64B", 1.2), cell("medium-4KiB", 4.9)], 5.0);
+        assert!(v.is_quiet());
+        assert_eq!(v.worst_spread_pct(), None);
+    }
+
+    #[test]
+    fn a_cell_over_the_floor_fails_the_run_and_offenders_come_worst_first() {
+        // The real numbers that motivated the floor: medium-4KiB swung 43 points
+        // across runs while a quiet cell sat at 1.2%.
+        let v = noise_check(
+            [
+                cell("point-echo-64B", 1.2),
+                cell("medium-4KiB", 43.0),
+                cell("pipelined-1k", 12.0),
+            ],
+            DEFAULT_NOISE_FLOOR_PCT,
+        );
+        assert!(!v.is_quiet());
+        assert_eq!(v.offenders.len(), 2);
+        assert_eq!(v.offenders[0].scenario, "medium-4KiB");
+        assert_eq!(v.offenders[1].scenario, "pipelined-1k");
+        assert_eq!(v.worst_spread_pct(), Some(43.0));
+    }
+
+    /// The floor only means something if a cell that clears it cannot be hiding
+    /// a swing as large as the margin under test — otherwise noise could
+    /// manufacture the gate. Asserted at compile time: it is a property of the
+    /// constant, not of any run.
+    const _: () = assert!(DEFAULT_NOISE_FLOOR_PCT < BEN_020_MARGIN_PCT);
+
+    #[test]
+    fn a_cell_exactly_at_the_floor_passes() {
+        let v = noise_check([cell("point-echo-64B", 5.0)], 5.0);
+        assert!(v.is_quiet());
     }
 }

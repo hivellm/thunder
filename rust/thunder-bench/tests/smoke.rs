@@ -6,6 +6,7 @@
 
 use thunder_bench::artifact::{render_json, render_markdown, Artifact, Environment};
 use thunder_bench::driver::{run_scenario, spawn_targets, Lane, RunConfig};
+use thunder_bench::pinning::PinReport;
 use thunder_bench::scenarios;
 
 fn tiny() -> RunConfig {
@@ -50,7 +51,7 @@ async fn echo_scenario_runs_on_every_lane() {
     // The artifact renders end to end from a real run.
     let selected = scenarios::select("point-echo-64B").unwrap();
     let artifact = Artifact::new(
-        Environment::capture(),
+        Environment::capture(PinReport::unpinned(8)),
         &cfg,
         &selected,
         Lane::ALL.iter().map(|l| l.as_str().to_owned()).collect(),

@@ -2,17 +2,21 @@
 //! machine/environment header (BEN-011), written under `bench-out/` — never
 //! left in git-ignored build dirs.
 //!
-//! The environment header carries what the skeleton can capture cheaply
-//! and honestly: OS/arch, logical CPU count, hostname, the exact rustc
-//! that built the binary, build profile and a runtime timestamp. Kernel
-//! and CPU-governor capture need platform probes and land with the full
-//! harness at T4.3 — until then the fields say so explicitly rather than
-//! pretending.
+//! The environment header carries OS/arch, logical CPU count, hostname, the
+//! exact rustc that built the binary, build profile, a runtime timestamp, and
+//! the kernel/governor probes plus the pinning report (see [`crate::pinning`]).
+//!
+//! Kernel and governor were promised "at T4.3" and shipped as the literal
+//! string `"unknown (platform probe lands at T4.3)"` — through T4.3, which
+//! closed without them. They are real probes now, and where a probe genuinely
+//! cannot answer (a VM with no cpufreq sysfs) the field says *why* rather than
+//! deferring to a milestone that has already passed.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::driver::{CellResult, RunConfig};
+use crate::pinning::{self, PinReport};
 use crate::scenarios::Scenario;
 
 /// Artifact schema tag — bump when the JSON shape changes.
@@ -37,15 +41,20 @@ pub struct Environment {
     pub timestamp_unix: u64,
     /// The same instant, ISO-8601 UTC.
     pub timestamp_utc: String,
-    /// Kernel version — platform probe lands at T4.3.
+    /// Kernel/OS version ([`crate::pinning::kernel_version`]).
     pub kernel: String,
-    /// CPU frequency governor — platform probe lands at T4.3.
+    /// CPU frequency governor / power policy ([`crate::pinning::governor`]).
+    /// A ramping governor makes early repetitions slower for reasons unrelated
+    /// to the code, so this belongs next to every number.
     pub governor: String,
+    /// What this run actually pinned (BEN-011). Distinguishes a pinned run
+    /// from one that asked and failed — the flag alone cannot.
+    pub pinning: PinReport,
 }
 
 impl Environment {
-    /// Capture the header at runtime.
-    pub fn capture() -> Self {
+    /// Capture the header at runtime, recording `pinning` as it happened.
+    pub fn capture(pinning: PinReport) -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -66,8 +75,9 @@ impl Environment {
             .to_owned(),
             timestamp_unix: now,
             timestamp_utc: utc_string(now),
-            kernel: "unknown (platform probe lands at T4.3)".to_owned(),
-            governor: "unknown (platform probe lands at T4.3)".to_owned(),
+            kernel: pinning::kernel_version(),
+            governor: pinning::governor(),
+            pinning,
         }
     }
 }
@@ -156,7 +166,16 @@ pub fn render_markdown(artifact: &Artifact) -> String {
         env.timestamp_utc, env.timestamp_unix
     ));
     md.push_str(&format!("| kernel | {} |\n", env.kernel));
-    md.push_str(&format!("| governor | {} |\n\n", env.governor));
+    md.push_str(&format!("| governor | {} |\n", env.governor));
+    md.push_str(&format!("| pinning | {} |\n\n", env.pinning));
+    if !env.pinning.is_pinned() {
+        md.push_str(
+            "> **This run is not pinned.** BEN-011 asks for pinned runs; without pinning the \
+             scheduler may migrate the driver and the listener between repetitions, so \
+             consecutive repetitions are not measuring the same machine. Read the numbers \
+             below as indicative only — they must not settle a BEN-020 (≥10%) question.\n\n",
+        );
+    }
 
     md.push_str("## Run config\n\n");
     md.push_str(&format!(
@@ -306,16 +325,19 @@ mod tests {
                 min: 12.0,
                 mean: 12.0,
                 max: 12.0,
+                spread_pct: 0.0,
             }),
             p99_us: Some(Dispersion {
                 min: 40.0,
                 mean: 40.0,
                 max: 40.0,
+                spread_pct: 0.0,
             }),
             qps: Some(Dispersion {
                 min: 200.0,
                 mean: 200.0,
                 max: 200.0,
+                spread_pct: 0.0,
             }),
             bytes_in_per_op: Some(90.0),
             bytes_out_per_op: Some(88.0),
@@ -323,7 +345,7 @@ mod tests {
         let pending = pending_cell(scenarios::find("bulk-10k").unwrap());
         let selected = scenarios::select("point-echo-64B,bulk-10k").unwrap();
         Artifact::new(
-            Environment::capture(),
+            Environment::capture(PinReport::unpinned(8)),
             &crate::driver::RunConfig {
                 ops: 100,
                 warmup: 10,
@@ -337,7 +359,7 @@ mod tests {
 
     #[test]
     fn environment_capture_is_sane() {
-        let env = Environment::capture();
+        let env = Environment::capture(PinReport::unpinned(8));
         assert!(env.cpus >= 1);
         assert!(!env.os.is_empty());
         assert!(!env.rustc.is_empty());

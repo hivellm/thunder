@@ -51,6 +51,7 @@ pub mod backend;
 pub mod bolt;
 pub mod driver;
 pub mod http;
+pub mod pinning;
 pub mod resp3;
 pub mod scenarios;
 pub mod stats;

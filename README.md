@@ -190,6 +190,8 @@ Thunder finishes the job with a **transport-isolated shootout**: Thunder RPC vs 
 
 **Gate G5 — always win**: no quantitative claim ships until Thunder beats every competitor in **every cell** of the matrix (margin ≥ 10%); a losing cell is a release-blocking optimization task. Design and rationale: [§6](docs/analysis/06-benchmark-mandate.md).
 
+One level up, a **product-level RPC-vs-HTTP harness** (`thunder-bench --product-harness`) measures the win on a product's *real* engine: three scenarios — bulk ingest, small high-QPS call, pipelined polling — with the **same handler behind both transports**, so the engine cancels out and the transport is the only variable. A product implements one trait to point it at its engine; acceptance floors are **seeded** from Nexus's table (point read 320 → 120 µs, bulk 780 → 220 ms) and each product recalibrates its own from its first measured run — seeds are never results, and no number is cited while the shootout gate is unsettled.
+
 ## 🗺 Roadmap
 
 | Phase | Deliverable | Gate | Status |

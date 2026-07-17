@@ -6,18 +6,22 @@ namespace HiveLLM.Thunder.Tests;
 /// Behavioral floor tests for the Thunder client (SPEC-003, feeds the
 /// CLT-090 suite): loopback responders built on the frame codec stand in
 /// for thunder-server — the client contract is exercised end-to-end over
-/// real sockets. Mirrors rust/thunder-client/tests/behavior.rs, plus the
+/// real sockets. Mirrors rust/thunder/tests/behavior.rs, plus the
 /// C#-specific CancellationToken scenario (CLT-021).
+/// <para>
+/// The configs below are named for the <b>shape</b> they exercise: Thunder
+/// ships no product configs (PRO-020), so tests build their own exactly as an
+/// application does.
+/// </para>
 /// </summary>
 public class BehaviorTests
 {
     /// <summary>
-    /// A custom profile (PRO-020): no handshake, push reserved, no error
+    /// A custom config (PRO-020): no handshake, push reserved, no error
     /// parsing — the neutral baseline the behavioral tests mutate.
     /// </summary>
-    private static Profile PlainProfile() => new()
+    private static Config PlainConfig() => new()
     {
-        Name = "test",
         Scheme = "test",
         DefaultPort = 0,
         Handshake = Handshake.None,
@@ -27,6 +31,34 @@ public class BehaviorTests
         MaxInFlight = 64,
         ErrorCodes = ErrorConvention.None,
         Tls = TlsPolicy.Off,
+    };
+
+    /// <summary>
+    /// The <see cref="Handshake.AuthCommand"/> shape with <b>no</b> HELLO —
+    /// the shape a deployment whose RPC path authenticates via <c>AUTH</c>
+    /// uses. It carries the RESP3 prefix convention its error tests need.
+    /// </summary>
+    private static Config AuthCommandConfig() => PlainConfig() with
+    {
+        Handshake = Handshake.AuthCommand,
+        HelloStyle = HelloStyle.NotUsed,
+        ErrorCodes = ErrorConvention.Resp3Prefixes,
+    };
+
+    /// <summary>The <see cref="Handshake.AuthCommand"/> shape plus an optional arg-less HELLO.</summary>
+    private static Config ArglessHelloConfig() => PlainConfig() with
+    {
+        Handshake = Handshake.AuthCommand,
+        HelloStyle = HelloStyle.ArgLess,
+        ErrorCodes = ErrorConvention.Resp3Prefixes,
+    };
+
+    /// <summary>The standard <see cref="Handshake.HelloMandatory"/> + map-payload shape.</summary>
+    private static Config HelloMandatoryConfig() => PlainConfig() with
+    {
+        Handshake = Handshake.HelloMandatory,
+        HelloStyle = HelloStyle.MapPayload,
+        ErrorCodes = ErrorConvention.BracketCode,
     };
 
     private static Value HelloOkReply() => Value.Map(
@@ -50,7 +82,7 @@ public class BehaviorTests
             await conn.SendOkAsync(first.Id, Value.Str(first.Command));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         var one = client.CallAsync("ONE");
         var two = client.CallAsync("TWO");
         await Task.WhenAll(one, two);
@@ -75,8 +107,8 @@ public class BehaviorTests
             }
         });
 
-        var profile = PlainProfile() with { MaxInFlight = 1 };
-        await using var client = await ThunderClient.ConnectAsync(server.Address, profile);
+        var config = PlainConfig() with { MaxInFlight = 1 };
+        await using var client = await ThunderClient.ConnectAsync(server.Address, config);
         var a = client.CallAsync("A");
         var b = client.CallAsync("B");
         await Task.WhenAll(a, b);
@@ -98,7 +130,7 @@ public class BehaviorTests
             await conn.SendOkAsync(request.Id, Value.Str("real"));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         var value = await client.CallAsync("GET");
         Assert.Equal("real", value.AsStr());
         Assert.Equal(1, client.UnknownResponseDrops);
@@ -121,23 +153,22 @@ public class BehaviorTests
             await conn.SendOkAsync(request.Id, Value.Str("PONG"));
         });
 
-        // PlainProfile() is the genuine Handshake.None case. (This test used
-        // to ride on Profile.Synap, which is AuthCommand since BN-023.)
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        // PlainConfig() is the genuine Handshake.None case.
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         Assert.False(client.IsAuthenticated);
         Assert.Equal("PONG", (await client.CallAsync("PING")).AsStr());
         await serverTask;
     }
 
     /// <summary>
-    /// The client half of the shape/policy split, on the profile BN-023
-    /// changed: <c>synap</c> is <see cref="Handshake.AuthCommand"/> now, but
-    /// with no credentials configured it sends no <c>AUTH</c> at all — exactly
-    /// right against an open deployment (<c>require_auth</c> off). It must
-    /// also never send <c>HELLO</c> (<see cref="HelloStyle.NotUsed"/>).
+    /// The client half of the shape/policy split (PRO-001a): under
+    /// <see cref="Handshake.AuthCommand"/> with no credentials configured the
+    /// client sends no <c>AUTH</c> at all — exactly right against an open
+    /// deployment. It must also never send <c>HELLO</c>
+    /// (<see cref="HelloStyle.NotUsed"/>).
     /// </summary>
     [Fact]
-    public async Task Synap_profile_without_credentials_sends_nothing()
+    public async Task Auth_command_without_credentials_or_hello_sends_nothing()
     {
         using var server = new MockServer();
         var serverTask = Task.Run(async () =>
@@ -148,32 +179,28 @@ public class BehaviorTests
             await conn.SendOkAsync(request.Id, Value.Str("PONG"));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, Profile.Synap);
+        await using var client = await ThunderClient.ConnectAsync(
+            server.Address, AuthCommandConfig());
         Assert.False(client.IsAuthenticated);
         Assert.Equal("PONG", (await client.CallAsync("PING")).AsStr());
         await serverTask;
     }
 
     /// <summary>
-    /// BN-023 regression: the <c>synap</c> profile must be able to
-    /// authenticate.
-    /// <para>
-    /// It used to be <see cref="Handshake.None"/>, so a credentialed client
-    /// sent <b>nothing</b> and could never reach a <c>require_auth</c> Synap.
-    /// Synap's RPC path has an <c>AUTH</c> handler (and no <c>HELLO</c>
-    /// handler), so the profile is <see cref="Handshake.AuthCommand"/> +
-    /// <see cref="HelloStyle.NotUsed"/>: <c>AUTH</c> goes out, <c>HELLO</c>
-    /// never does.
-    /// </para>
+    /// BN-023 regression: <see cref="Handshake.AuthCommand"/> +
+    /// <see cref="HelloStyle.NotUsed"/> must be able to authenticate —
+    /// <c>AUTH</c> goes out, <c>HELLO</c> never does. Read as
+    /// <see cref="Handshake.None"/>, this shape would send <b>nothing</b> and
+    /// could never reach a deployment that requires credentials.
     /// </summary>
     [Fact]
-    public async Task Synap_profile_sends_auth_and_never_hello()
+    public async Task Auth_command_config_sends_auth_and_never_hello()
     {
         using var server = new MockServer();
         var serverTask = Task.Run(async () =>
         {
             using var conn = await server.AcceptAsync();
-            // First frame must be AUTH — Synap has no HELLO handler at all.
+            // First frame must be AUTH — this shape has no HELLO at all.
             var auth = await conn.ReadRequestAsync();
             Assert.Equal("AUTH", auth.Command);
             Assert.Equal(
@@ -187,7 +214,7 @@ public class BehaviorTests
 
         var config = new ClientConfig { Credentials = Credentials.UserPass("root", "hunter2") };
         await using var client = await ThunderClient.ConnectAsync(
-            server.Address, Profile.Synap, config);
+            server.Address, AuthCommandConfig(), config);
         Assert.True(client.IsAuthenticated);
         Assert.Equal("PONG", (await client.CallAsync("PING")).AsStr());
         await serverTask;
@@ -202,8 +229,8 @@ public class BehaviorTests
             using var conn = await server.AcceptAsync();
             var hello = await conn.ReadRequestAsync();
             Assert.Equal("HELLO", hello.Command);
-            // Nexus RPC HELLO takes no arguments — the positional [Int(1)] is
-            // the RESP3 HELLO, a different surface (BN-023 errata).
+            // The arg-less RPC HELLO takes no arguments — the positional
+            // [Int(1)] is the RESP3 HELLO, a different surface (BN-023 errata).
             Assert.Empty(hello.Args);
             await conn.SendOkAsync(hello.Id, Value.Null);
             var auth = await conn.ReadRequestAsync();
@@ -217,7 +244,7 @@ public class BehaviorTests
 
         var config = new ClientConfig { Credentials = Credentials.ApiKey("k-123") };
         await using var client = await ThunderClient.ConnectAsync(
-            server.Address, Profile.Nexus, config);
+            server.Address, ArglessHelloConfig(), config);
         Assert.True(client.IsAuthenticated);
         Assert.Equal("PONG", (await client.CallAsync("PING")).AsStr());
         await serverTask;
@@ -241,7 +268,7 @@ public class BehaviorTests
 
         var config = new ClientConfig { Credentials = Credentials.UserPass("admin", "hunter2") };
         await using var client = await ThunderClient.ConnectAsync(
-            server.Address, Profile.Nexus, config);
+            server.Address, ArglessHelloConfig(), config);
         Assert.True(client.IsAuthenticated);
         await serverTask;
     }
@@ -258,7 +285,7 @@ public class BehaviorTests
             await conn.SendOkAsync(request.Id, Value.Str("PONG"));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, Profile.Nexus);
+        await using var client = await ThunderClient.ConnectAsync(server.Address, ArglessHelloConfig());
         Assert.False(client.IsAuthenticated);
         await client.CallAsync("PING");
         await serverTask;
@@ -290,7 +317,7 @@ public class BehaviorTests
             ClientName = "itest",
         };
         await using var client = await ThunderClient.ConnectAsync(
-            server.Address, Profile.Vectorizer, config);
+            server.Address, HelloMandatoryConfig(), config);
         Assert.True(client.IsAuthenticated);
         Assert.Equal(new[] { "search", "insert" }, client.Capabilities);
         await serverTask;
@@ -310,7 +337,7 @@ public class BehaviorTests
         var config = new ClientConfig { Credentials = Credentials.ApiKey("wrong") };
         // CLT-003: an auth failure is the auth class, not a generic error.
         var error = await Assert.ThrowsAsync<ThunderAuthException>(
-            () => ThunderClient.ConnectAsync(server.Address, Profile.Vectorizer, config));
+            () => ThunderClient.ConnectAsync(server.Address, HelloMandatoryConfig(), config));
         Assert.Contains("unauthorized", error.Message, StringComparison.Ordinal);
         await serverTask;
     }
@@ -332,7 +359,7 @@ public class BehaviorTests
             await conn.SendOkAsync(next.Id, Value.Str("fresh"));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         await Assert.ThrowsAsync<ThunderTimeoutException>(
             () => client.CallAsync(
                 "SLOW", System.Array.Empty<Value>(), TimeSpan.FromMilliseconds(100)));
@@ -356,7 +383,7 @@ public class BehaviorTests
             await conn.SendOkAsync(next.Id, Value.Str("fresh"));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         // CLT-021: cancellation surfaces as OperationCanceledException and
         // removes the pending entry — the late response becomes a stray drop.
@@ -386,7 +413,7 @@ public class BehaviorTests
             await second.SendOkAsync(again.Id, Value.Str("second"));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         Assert.Equal("first", (await client.CallAsync("A")).AsStr());
         // Let the reader observe the EOF and mark the connection dead.
         await Task.Delay(200);
@@ -424,7 +451,7 @@ public class BehaviorTests
 
         var config = new ClientConfig { Credentials = Credentials.ApiKey("k") };
         await using var client = await ThunderClient.ConnectAsync(
-            server.Address, Profile.Vectorizer, config);
+            server.Address, HelloMandatoryConfig(), config);
         await client.CallAsync("PING");
         await Task.Delay(200);
 
@@ -450,7 +477,7 @@ public class BehaviorTests
             await conn.SendErrAsync(foo.Id, "ERR unknown command 'FOO'");
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, Profile.Nexus);
+        await using var client = await ThunderClient.ConnectAsync(server.Address, ArglessHelloConfig());
         var auth = await Assert.ThrowsAsync<ThunderAuthException>(() => client.CallAsync("GET"));
         Assert.Equal("NOAUTH Authentication required.", auth.Message);
         var serverError = await Assert.ThrowsAsync<ThunderServerException>(
@@ -474,7 +501,7 @@ public class BehaviorTests
         });
 
         await using var client = await ThunderClient.ConnectAsync(
-            server.Address, Profile.Vectorizer);
+            server.Address, HelloMandatoryConfig());
         var error = await Assert.ThrowsAsync<ThunderServerException>(
             () => client.CallAsync("SEARCH"));
         Assert.Equal("[collection_not_found] no such collection: docs", error.Message);
@@ -499,8 +526,8 @@ public class BehaviorTests
             await conn.SendOkAsync(request.Id, Value.Str("PONG"));
         });
 
-        var profile = PlainProfile() with { Push = PushPolicy.Enabled };
-        await using var client = await ThunderClient.ConnectAsync(server.Address, profile);
+        var config = PlainConfig() with { Push = PushPolicy.Enabled };
+        await using var client = await ThunderClient.ConnectAsync(server.Address, config);
         var pushed = new TaskCompletionSource<Value>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnPush(value => pushed.TrySetResult(value));
@@ -511,7 +538,7 @@ public class BehaviorTests
     }
 
     [Fact]
-    public async Task Push_frame_under_reserved_profile_poisons_connection()
+    public async Task Push_frame_under_reserved_push_poisons_connection()
     {
         using var server = new MockServer();
         var serverTask = Task.Run(async () =>
@@ -530,7 +557,7 @@ public class BehaviorTests
             await second.SendOkAsync(request.Id, Value.Str("recovered"));
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         // Push under Reserved is a protocol error (CLT-060).
         await Assert.ThrowsAsync<ThunderDecodeException>(() => client.CallAsync("GET"));
         // Poisoned connection, lazy reconnect on the next call.
@@ -549,7 +576,7 @@ public class BehaviorTests
             using (var conn = await server.AcceptAsync())
             {
                 await conn.ReadRequestAsync();
-                // A length prefix past the profile cap — the client must
+                // A length prefix past the config's cap — the client must
                 // refuse on the prefix alone, before any body exists.
                 await conn.SendRawAsync(BitConverter.GetBytes(1_000u));
             }
@@ -559,8 +586,8 @@ public class BehaviorTests
             await second.SendOkAsync(request.Id, Value.Str("recovered"));
         });
 
-        var profile = PlainProfile() with { MaxFrameBytes = 64 };
-        await using var client = await ThunderClient.ConnectAsync(server.Address, profile);
+        var config = PlainConfig() with { MaxFrameBytes = 64 };
+        await using var client = await ThunderClient.ConnectAsync(server.Address, config);
         await Assert.ThrowsAsync<ThunderFrameTooLargeException>(() => client.CallAsync("GET"));
         Assert.Equal("recovered", (await client.CallAsync("GET")).AsStr());
         await serverTask;
@@ -580,7 +607,7 @@ public class BehaviorTests
                 BitConverter.GetBytes(4u).Concat(new byte[] { 0xc1, 0xc1, 0xc1, 0xc1 }).ToArray());
         });
 
-        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         await Assert.ThrowsAsync<ThunderDecodeException>(() => client.CallAsync("GET"));
         await serverTask;
     }
@@ -606,7 +633,7 @@ public class BehaviorTests
             }
         });
 
-        var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        var client = await ThunderClient.ConnectAsync(server.Address, PlainConfig());
         var pending = client.CallAsync("HANG");
         await Task.Delay(100);
 
@@ -625,7 +652,7 @@ public class BehaviorTests
     public async Task Http_url_is_rejected_at_connect()
     {
         var error = await Assert.ThrowsAsync<ThunderConnectionException>(
-            () => ThunderClient.ConnectAsync("http://localhost:8080", PlainProfile()));
+            () => ThunderClient.ConnectAsync("http://localhost:8080", PlainConfig()));
         Assert.Contains("RPC-only", error.Message, StringComparison.Ordinal);
         Assert.Contains("HTTP client", error.Message, StringComparison.Ordinal);
     }

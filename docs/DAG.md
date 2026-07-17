@@ -131,7 +131,7 @@ graph TD
 |---|---|---|---|
 | T0.1 | Monorepo layout (`rust/`, `typescript/`, `python/`, `csharp/`, `conformance/`), workspace lints, CI matrix (fmt + clippy `-D warnings` + tests on Linux/macOS/Windows; tsc/eslint/vitest; ruff/pytest; dotnet build/test) | [SPEC-006](specs/SPEC-006-packaging-release.md) | NFR-08 |
 | T0.2 | Names reserved on crates.io / npm / PyPI / NuGet; org decision (`@hivehub` (decided 2026-07-17)) recorded | SPEC-006 | FR-60 |
-| T0.3 | `docs/spec/` transplant of wire v1 with provenance header; profile dimensions specified | [SPEC-001](specs/SPEC-001-wire-format.md), [SPEC-002](specs/SPEC-002-profiles.md) | FR-01, FR-10 |
+| T0.3 | `docs/spec/` transplant of wire v1 with provenance header; profile dimensions specified | [SPEC-001](specs/SPEC-001-wire-format.md), [SPEC-002](specs/SPEC-002-configuration.md) | FR-01, FR-10 |
 | T0.4 | Corpus v0: canonical PING/PONG vectors + framing set, loadable data files | [SPEC-005](specs/SPEC-005-conformance.md) | FR-50 |
 | T1.1 | `thunder::wire` layer (port of `nexus-protocol/src/rpc/`, canonical `Bytes`=bin via `serde_bytes`, array `Request`, decode tolerances, configurable cap) | SPEC-001 | FR-01..FR-06 |
 | T1.2 | Full corpus (value matrix, int/float edges, framing edges, tolerance, push, handshake groups) + Rust loader in default test run | SPEC-005 | FR-50, FR-51 |

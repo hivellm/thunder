@@ -34,14 +34,14 @@ public enum ThunderErrorClass
 
     /// <summary>
     /// A malformed frame (WIRE-023), or a push frame under a Reserved
-    /// profile (CLT-060).
+    /// config (CLT-060).
     /// </summary>
     Decode,
 }
 
 /// <summary>
 /// Base type of every typed Thunder error (CLT-050..052). Server error
-/// strings are parsed per the profile's <see cref="ErrorConvention"/> via
+/// strings are parsed per the config's <see cref="ErrorConvention"/> via
 /// <see cref="FromServerMessage"/>; <see cref="Exception.Message"/> carries
 /// the raw server message verbatim for the Auth and Server classes.
 /// </summary>
@@ -71,7 +71,7 @@ public class ThunderException : Exception
     private static readonly string[] AuthPrefixes = { "NOAUTH", "WRONGPASS", "NOPERM" };
 
     /// <summary>
-    /// Parse a server error string per the profile's convention (CLT-050,
+    /// Parse a server error string per the config's convention (CLT-050,
     /// PRO-014).
     /// <list type="bullet">
     /// <item><see cref="ErrorConvention.Resp3Prefixes"/>: NOAUTH/WRONGPASS/NOPERM
@@ -128,8 +128,8 @@ public class ThunderException : Exception
 
     /// <summary>
     /// Split a leading <c>"[code] "</c> prefix. The code must be non-empty
-    /// and whitespace-free (machine-readable, Vectorizer-style); anything
-    /// else leaves the message untouched.
+    /// and whitespace-free (machine-readable); anything else leaves the
+    /// message untouched.
     /// </summary>
     private static (string? Code, string Remainder) SplitBracketCode(string message)
     {
@@ -212,7 +212,7 @@ public sealed class ThunderFrameTooLargeException : ThunderException
     public long MaxBytes { get; }
 }
 
-/// <summary>A malformed frame body (WIRE-023), or a push frame under a Reserved profile (CLT-060).</summary>
+/// <summary>A malformed frame body (WIRE-023), or a push frame under a push-reserved config (CLT-060).</summary>
 public sealed class ThunderDecodeException : ThunderException
 {
     /// <summary>Create a decode error.</summary>

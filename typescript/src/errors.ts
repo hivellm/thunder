@@ -1,14 +1,15 @@
 /**
  * Typed client errors (CLT-050..052).
  *
- * `Response.result` error strings are parsed per the profile's
+ * `Response.result` error strings are parsed per the config's
  * `errorCodes` convention (PRO-014) into a {@link ThunderError} carrying
  * the raw message, an optional machine-readable `code` (from a leading
- * `"[code] "` prefix), and a stable error **class**. Product SDKs and user
- * code branch on the class and `code`, never on message text (CLT-052).
+ * `"[code] "` prefix), and a stable error **class**. Application SDKs and
+ * user code branch on the class and `code`, never on message text
+ * (CLT-052).
  */
 
-import type { ErrorConvention } from "./profile";
+import type { ErrorConvention } from "./config";
 
 /** The stable error classes of the client contract (CLT-050). */
 export type ErrorClass =
@@ -108,7 +109,7 @@ export class FrameTooLargeError extends ThunderError {
 
 /**
  * Malformed frame body (WIRE-023) — or a push frame under a `reserved`
- * profile (CLT-060). From a server frame this poisons the connection
+ * config (CLT-060). From a server frame this poisons the connection
  * (CLT-014).
  */
 export class DecodeError extends ThunderError {
@@ -119,7 +120,7 @@ export class DecodeError extends ThunderError {
 }
 
 /**
- * Parse a server error string per the profile's convention
+ * Parse a server error string per the config's convention
  * (CLT-050, PRO-014). Mirrors the Rust `ClientError::from_server_message`:
  *
  * - `resp3_prefixes`: `NOAUTH`/`WRONGPASS`/`NOPERM` → {@link AuthError};
@@ -156,7 +157,7 @@ export function classifyServerError(
 const AUTH_PREFIXES = ["NOAUTH", "WRONGPASS", "NOPERM"];
 
 /**
- * True when the message starts with one of the auth prefixes both family
+ * True when the message starts with one of the auth prefixes both prefix
  * conventions use for authentication failures (CLT-051). The prefix must
  * be word-aligned (`NOAUTHx` does not count).
  */
@@ -170,7 +171,7 @@ function startsWithAuthPrefix(message: string): boolean {
 
 /**
  * Split a leading `"[code] "` prefix. The code must be non-empty and
- * whitespace-free (machine-readable, Vectorizer-style); anything else
+ * whitespace-free (machine-readable); anything else
  * leaves the message untouched.
  */
 function splitBracketCode(message: string): {

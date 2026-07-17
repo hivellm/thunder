@@ -1,9 +1,9 @@
 """Typed client errors (CLT-050..052) plus the wire-level frame errors.
 
-``Result::Err(string)`` replies are parsed per the profile's ``error_codes``
+``Result::Err(string)`` replies are parsed per the config's ``error_codes``
 convention (PRO-014) by :func:`from_server_message` into a typed error
 carrying the raw message, an optional machine-readable ``code`` (from a
-leading ``"[code] "`` prefix), and a stable error **class**. Product SDKs
+leading ``"[code] "`` prefix), and a stable error **class**. Applications
 and user code branch on the class and ``code``, never on message text
 (CLT-052).
 
@@ -17,8 +17,8 @@ Class map (mirrors ``thunder-client``'s ``ClientError``):
   endpoints (CLT-004/030/031/070)
 - :class:`TimeoutError` — the per-call or connect timeout elapsed (CLT-020)
 - :class:`FrameTooLargeError` — a frame exceeded the cap (WIRE-020/021)
-- :class:`DecodeError` — malformed frame, or a push frame under a
-  ``Reserved`` profile (WIRE-023, CLT-060)
+- :class:`DecodeError` — malformed frame, or a push frame while push is
+  ``RESERVED`` (WIRE-023, CLT-060)
 
 Note: ``ConnectionError`` and ``TimeoutError`` deliberately shadow the
 builtins *inside this namespace only* — catch them as
@@ -27,7 +27,7 @@ builtins *inside this namespace only* — catch them as
 
 from __future__ import annotations
 
-from .profile import ErrorConvention
+from .config import ErrorConvention
 
 
 class ThunderError(Exception):
@@ -84,8 +84,8 @@ class FrameTooLargeError(ThunderError):
 
 
 class DecodeError(ThunderError):
-    """Malformed frame body (WIRE-023), or a push frame received under a
-    ``Reserved`` profile (CLT-060)."""
+    """Malformed frame body (WIRE-023), or a push frame received while push
+    is ``RESERVED`` (CLT-060)."""
 
 
 def frame_too_large(body: int, limit: int) -> FrameTooLargeError:
@@ -96,7 +96,7 @@ def frame_too_large(body: int, limit: int) -> FrameTooLargeError:
 
 
 def from_server_message(message: str, convention: ErrorConvention) -> ThunderError:
-    """Parse a server error string per the profile's convention
+    """Parse a server error string per the config's convention
     (CLT-050, PRO-014).
 
     - ``RESP3_PREFIXES``: ``NOAUTH``/``WRONGPASS``/``NOPERM`` →
@@ -139,7 +139,7 @@ def _starts_with_auth_prefix(message: str) -> bool:
 
 def _split_bracket_code(message: str) -> tuple[str | None, str]:
     """Split a leading ``"[code] "`` prefix. The code must be non-empty and
-    whitespace-free (machine-readable, Vectorizer-style); anything else
+    whitespace-free (machine-readable); anything else
     leaves the message untouched."""
     if message.startswith("["):
         inner = message[1:]

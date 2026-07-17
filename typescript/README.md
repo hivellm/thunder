@@ -1,6 +1,6 @@
 # @hivehub/thunder
 
-**⚡ HiveLLM binary RPC for TypeScript — the family wire (v1, frozen) + a multiplexed, profile-driven client**
+**⚡ HiveLLM binary RPC for TypeScript — the family wire (v1, frozen) + a multiplexed, config-driven client**
 
 One frame is `u32 LE length` + MessagePack body over the 8-variant value model
 (`Null | Bool | Int(i64) | Float(f64) | Bytes | Str | Array | Map`). This package is the
@@ -18,9 +18,12 @@ Node ≥ 18. Sole runtime dependency: `@msgpack/msgpack`. Dual ESM + CJS build.
 ## Quickstart
 
 ```ts
-import { Client, Profiles, Value } from "@hivehub/thunder";
+import { Client, Config, Value } from "@hivehub/thunder";
 
-const client = await Client.connect("vectorizer://localhost", Profiles.vectorizer, {
+// Your application's identity; every behavior is the standard.
+const config = Config.standard().withScheme("myapp").withPort(9000);
+
+const client = await Client.connect("myapp://localhost", config, {
   credentials: { type: "apiKey", apiKey: "secret" },
   clientName: "my-app",
 });
@@ -38,28 +41,58 @@ const results = await Promise.all([
 await client.close();
 ```
 
-Endpoints accept `scheme://host[:port]` for every registered profile scheme (the port
-defaults from the registry) plus bare `host:port`. `http(s)://` is rejected — Thunder is
-RPC-only; REST belongs to the product's HTTP client.
+Endpoints accept `scheme://host[:port]` — the scheme being your config's own, resolving
+your config's `defaultPort` — plus bare `host:port`. `http(s)://` is rejected — Thunder is
+RPC-only; REST belongs to your application's HTTP client.
 
 The client floor, uniform across all Thunder languages: TCP_NODELAY, connect timeout
 10 s, per-call timeout 30 s, demux by id with pipelining, `maxInFlight` backpressure,
 lazy reconnect (2 attempts, capped backoff, no silent replay), push-frame hook, frame
 cap validated against the length prefix **before** allocation.
 
-## Profiles
+## Configuration
 
-Product differences are data, not forks ([SPEC-002](../docs/specs/SPEC-002-profiles.md)):
+Thunder ships **one standard and zero product knowledge**
+([SPEC-002](../docs/specs/SPEC-002-configuration.md)). There are no named configurations: a
+protocol library that must serve implementations which do not exist yet cannot ship a
+hardcoded list of the ones that did. `Config.standard()` is **the** family standard, and
+every dimension is a knob:
 
-| Profile | Scheme / port | Handshake | Error convention | Push |
-|---|---|---|---|---|
-| `Profiles.synap` | `synap://` 15501 | `AUTH` (no `HELLO`) | RESP3 prefixes | enabled |
-| `Profiles.nexus` | `nexus://` 15475 | arg-less `HELLO` optional + `AUTH` | RESP3 prefixes | reserved |
-| `Profiles.vectorizer` | `vectorizer://` 15503 | `HELLO` mandatory | `"[code] message"` | reserved |
-| `Profiles.lexum` | `lexum://` 17001 | `HELLO` mandatory | both | reserved |
+| Dimension | Standard | Meaning |
+|---|---|---|
+| `scheme` / `defaultPort` | `""` / `0` | **Identity — yours.** Thunder has no default |
+| `handshake` | `hello_mandatory` | `HELLO` first frame, carrying credentials |
+| `helloStyle` | `map_payload` | `{version, token \| api_key, client_name}`; reply carries `proto` + `capabilities` |
+| `push` | `reserved` | `PUSH_ID` is server→client only; emitting is opt-in |
+| `maxFrameBytes` | `67108864` (64 MiB) | checked before allocation (WIRE-020) |
+| `maxInFlight` | `256` | per-connection request bound |
+| `errorCodes` | `both` | `"[code] message"` superset, recognizing `NOAUTH`/`WRONGPASS`/`NOPERM` |
+| `tls` | `off` | additive capability, never a dialect |
 
-Custom profiles never wait for a Thunder release: spread a constant —
-`{ ...Profiles.vectorizer, name: "acme", scheme: "acme", defaultPort: 9000 }`.
+An application that matches the standard writes its identity and nothing else. One that
+still diverges says so **in its own repository**, where that knowledge belongs:
+
+```ts
+// A deployment whose RPC path authenticates via AUTH, has no HELLO handler,
+// and ships a push-producing command.
+const config = Config.standard()
+  .withScheme("legacy")
+  .withPort(15501)
+  .withHandshake("auth_command")
+  .withHelloStyle("not_used")
+  .withPush("enabled");
+```
+
+Every `with*` returns a **new** frozen config, so convergence is visible and
+per-application: delete overrides until only identity remains. Nothing waits on a Thunder
+release. A config is data (PRO-003) — a plain object literal (or one loaded from your own
+settings file, lifted with `Config.from`) works anywhere a `Config` is accepted; the
+`with*` prefix exists only because TypeScript cannot give one object both a `scheme`
+property and a `scheme()` method.
+
+The standard's values are pinned to
+[`conformance/standard.yaml`](../conformance/standard.yaml) by a test in every language,
+so the four implementations can never disagree about what "standard" means.
 
 ## Errors
 
@@ -72,8 +105,8 @@ the subclass) and `code`, never on message text:
 | `server` | `ServerError` | Server `Err` reply; `code` carries a parsed `"[code] "` prefix |
 | `connection` | `ConnectionError` | Dial/write failure, connection died, client closed |
 | `timeout` | `TimeoutError` | Connect or per-call timeout elapsed |
-| `frame-too-large` | `FrameTooLargeError` | Inbound frame past the profile cap (connection poisoned) |
-| `decode` | `DecodeError` | Malformed frame, or push under a `reserved` profile (poisoned) |
+| `frame-too-large` | `FrameTooLargeError` | Inbound frame past the config's cap (connection poisoned) |
+| `decode` | `DecodeError` | Malformed frame, or push under a `reserved` config (poisoned) |
 
 ## Wire layer
 
@@ -97,7 +130,7 @@ server mirroring the Rust reference client tests.
 ## Specs
 
 Normative contracts: [SPEC-001 wire format](../docs/specs/SPEC-001-wire-format.md) ·
-[SPEC-002 profiles](../docs/specs/SPEC-002-profiles.md) ·
+[SPEC-002 configuration](../docs/specs/SPEC-002-configuration.md) ·
 [SPEC-003 client](../docs/specs/SPEC-003-client.md) ·
 [SPEC-005 conformance](../docs/specs/SPEC-005-conformance.md) ·
 [SPEC-006 packaging](../docs/specs/SPEC-006-packaging-release.md)

@@ -45,9 +45,15 @@ for map-shaped requests).
 Canonical bytes never change (wire v1 is frozen — NFR-01). Adding vectors is a minor
 change; the full 1.0 corpus lands at DAG T1.2 (`phase1_conformance-harness`).
 
-## `profiles/` — the family profile registry (SPEC-002, PRO-010)
+## `standard.yaml` — THE standard configuration (SPEC-002, PRO-011)
 
-One YAML per registered product profile (synap, nexus, vectorizer, lexum). These files
-are the single source the per-language `Profile` constants are generated from; a
-product's server and SDKs can therefore never disagree. Custom profiles remain
-constructible in code — the registry never gates a new product (PRO-020).
+One file, because Thunder ships **one** configuration and **zero** product knowledge. There is no
+per-product registry: a protocol library that must serve implementations which do not exist yet
+cannot ship a hardcoded list of the ones that did.
+
+Every language pins its `Config::standard()` to this file in its default test run (PRO-013), so the
+four implementations can never disagree about what "standard" means — the one guarantee the deleted
+per-product registry legitimately provided.
+
+`scheme` and `default_port` are deliberately absent: identity is the application's. An application
+starts from the standard and overrides only what it diverges on, in its own repository (PRO-020/021).

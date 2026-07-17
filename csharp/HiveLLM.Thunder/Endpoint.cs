@@ -5,31 +5,34 @@ namespace HiveLLM.Thunder;
 /// <summary>
 /// A resolved RPC endpoint: host plus concrete port (CLT-070/071).
 ///
-/// <see cref="Parse"/> accepts <c>scheme://host[:port]</c> for every scheme
-/// in the profile registry — scheme → default-port resolution is data-driven
-/// (PRO-012), products never fork the parser — plus bare <c>host:port</c>
-/// (RPC implied; the caller supplies the profile). <c>http(s)://</c> URLs
-/// are rejected with a pointer to the product's HTTP client: Thunder is
-/// RPC-only. Parse failures use the connection error class — an endpoint
+/// <see cref="Parse"/> accepts <c>scheme://host[:port]</c> where the scheme is
+/// <b>the application's own</b>, taken from its <see cref="Config"/> — Thunder
+/// has no registry of schemes to consult and no product's parser to fork
+/// (PRO-012) — plus bare <c>host:port</c> (RPC implied). <c>http(s)://</c>
+/// URLs are rejected with a pointer to the application's HTTP client: Thunder
+/// is RPC-only. Parse failures use the connection error class — an endpoint
 /// that cannot be parsed is an endpoint that cannot be dialed.
 /// </summary>
 /// <param name="Host">Host name or IP literal (IPv6 without brackets).</param>
-/// <param name="Port">Concrete port — explicit, or the scheme's registry default.</param>
+/// <param name="Port">Concrete port — explicit, or the config's <see cref="Config.DefaultPort"/>.</param>
 public sealed record Endpoint(string Host, ushort Port)
 {
     /// <summary>
-    /// Parse an endpoint string (CLT-070). Accepted forms:
+    /// Parse an endpoint string against the application's <see cref="Config"/>
+    /// (CLT-070). Accepted forms:
     /// <list type="bullet">
-    /// <item><c>scheme://host[:port]</c> for every registered profile scheme;
-    /// a missing port resolves to the scheme's registry default (CLT-071).</item>
-    /// <item>bare <c>host:port</c> (RPC implied — the caller supplies the profile).</item>
+    /// <item><c>scheme://host[:port]</c> where <c>scheme</c> is
+    /// <see cref="Config.Scheme"/>; a missing port resolves to
+    /// <see cref="Config.DefaultPort"/> (CLT-071).</item>
+    /// <item>bare <c>host:port</c> (RPC implied) — needs no configured scheme.</item>
     /// <item><c>[v6::addr]:port</c> / <c>scheme://[v6::addr][:port]</c> for IPv6 literals.</item>
     /// </list>
     /// </summary>
     /// <exception cref="ThunderConnectionException">The endpoint cannot be parsed (CLT-070).</exception>
-    public static Endpoint Parse(string input)
+    public static Endpoint Parse(string input, Config config)
     {
         ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(config);
         var trimmed = input.Trim();
         var schemeSplit = trimmed.IndexOf("://", StringComparison.Ordinal);
         if (schemeSplit >= 0)
@@ -39,16 +42,18 @@ public sealed record Endpoint(string Host, ushort Port)
             if (scheme is "http" or "https")
             {
                 throw Invalid(
-                    $"'{trimmed}' is an HTTP URL and Thunder is RPC-only — use the product's " +
+                    $"'{trimmed}' is an HTTP URL and Thunder is RPC-only — use the application's " +
                     "HTTP client for REST endpoints, or pass an RPC endpoint such as " +
-                    "'vectorizer://host:port' or bare 'host:port'");
+                    "'scheme://host:port' or bare 'host:port'");
             }
 
-            var profile = Profile.Registry.FirstOrDefault(p => p.Scheme == scheme)
-                ?? throw Invalid(
-                    $"unknown endpoint scheme '{scheme}' — registered schemes: " +
-                    $"{string.Join(", ", Profile.Registry.Select(p => p.Scheme))}; " +
-                    "or use bare 'host:port'");
+            if (!string.Equals(scheme, config.Scheme, StringComparison.Ordinal))
+            {
+                throw Invalid(
+                    $"endpoint scheme '{scheme}' does not match this client's configured scheme " +
+                    $"'{config.Scheme}' — set the scheme on the Config, or use bare 'host:port'");
+            }
+
             if (rest.EndsWith('/'))
             {
                 rest = rest[..^1];
@@ -61,7 +66,7 @@ public sealed record Endpoint(string Host, ushort Port)
             }
 
             var (host, port) = SplitHostPort(rest);
-            return new Endpoint(host, port ?? profile.DefaultPort);
+            return new Endpoint(host, port ?? config.DefaultPort);
         }
 
         var (bareHost, barePort) = SplitHostPort(trimmed);

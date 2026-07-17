@@ -3,7 +3,7 @@ using Xunit;
 namespace HiveLLM.Thunder.Tests;
 
 /// <summary>
-/// Error-string parsing per the profile conventions (CLT-050..052,
+/// Error-string parsing per the configured conventions (CLT-050..052,
 /// PRO-014) — mirrors rust/thunder-client/src/error.rs tests exactly.
 /// </summary>
 public class ErrorTests

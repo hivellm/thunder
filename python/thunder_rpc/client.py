@@ -9,7 +9,7 @@ above, CLT-080) and demultiplexes concurrent in-flight calls over it:
   malformed / oversized frames — every pending call fails with the same
   typed error (CLT-014);
 - writes are serialized behind a lock so frames never interleave (CLT-011);
-- in-flight calls are bounded by the profile's ``max_in_flight`` — excess
+- in-flight calls are bounded by the config's ``max_in_flight`` — excess
   calls wait, they are not refused (CLT-012);
 - per-call timeouts remove the pending entry so a late response falls under
   the unknown-id drop (CLT-020);
@@ -41,10 +41,10 @@ from ._handshake import (
     as_handshake_error,
     handshake_exchange,
 )
-from .config import ClientConfig, HandshakeInfo
+from .client_config import ClientConfig, HandshakeInfo
+from .config import Config, PushPolicy
 from .endpoint import parse_endpoint
 from .errors import from_server_message
-from .profile import Profile, PushPolicy
 from .value import PUSH_ID, Request, Response, Value
 
 PushHandler = Callable[[Value], None]
@@ -152,21 +152,29 @@ class _Conn:
 
 
 class Client:
-    """A multiplexed, profile-driven Thunder RPC client (SPEC-003).
+    """A multiplexed, config-driven Thunder RPC client (SPEC-003).
 
     Thread-safe: calls may run concurrently from any number of threads
     (CLT-010). Construct via :meth:`connect`; usable as a context manager.
+
+    ``config`` is the application's protocol config (SPEC-002);
+    ``client_config`` is this client's dialing policy (SPEC-003).
     """
 
     def __init__(
-        self, endpoint: str, profile: Profile, config: ClientConfig | None = None
+        self,
+        endpoint: str,
+        config: Config,
+        client_config: ClientConfig | None = None,
     ):
-        self._endpoint = parse_endpoint(endpoint)
-        self._profile = profile
-        self._config = config if config is not None else ClientConfig()
+        self._endpoint = parse_endpoint(endpoint, config)
+        self._config = config
+        self._client_config = (
+            client_config if client_config is not None else ClientConfig()
+        )
         self._next_id = 1
         self._id_lock = threading.Lock()
-        self._gate = _Gate(profile.max_in_flight)
+        self._gate = _Gate(config.max_in_flight)
         self._conn: _Conn | None = None
         self._conn_lock = threading.Lock()
         #: Serializes re-dial attempts so one caller reconnects at a time.
@@ -179,15 +187,19 @@ class Client:
 
     @classmethod
     def connect(
-        cls, endpoint: str, profile: Profile, config: ClientConfig | None = None
+        cls,
+        endpoint: str,
+        config: Config,
+        client_config: ClientConfig | None = None,
     ) -> Client:
-        """Dial ``endpoint`` and run the profile handshake (CLT-001/002).
+        """Dial ``endpoint`` and run the configured handshake (CLT-001/002).
 
         ``endpoint`` accepts every form of
         :func:`~thunder_rpc.endpoint.parse_endpoint` (CLT-070):
-        ``scheme://host[:port]`` or bare ``host:port``.
+        ``scheme://host[:port]`` (the application's own scheme) or bare
+        ``host:port``.
         """
-        client = cls(endpoint, profile, config)
+        client = cls(endpoint, config, client_config)
         conn = client._establish()
         with client._conn_lock:
             client._conn = conn
@@ -205,7 +217,7 @@ class Client:
         order follows the server, not submission order (CLT-010).
         """
         if timeout is None:
-            timeout = self._config.call_timeout
+            timeout = self._client_config.call_timeout
         args = tuple(args)
         # CLT-012: bounded in-flight — excess calls wait here, never refused.
         self._gate.acquire()
@@ -263,9 +275,9 @@ class Client:
             return self._unknown_drops
 
     @property
-    def profile(self) -> Profile:
-        """The profile this client drives its behavior from."""
-        return self._profile
+    def config(self) -> Config:
+        """The protocol config this client drives its behavior from."""
+        return self._config
 
     def __enter__(self) -> Client:
         return self
@@ -327,11 +339,11 @@ class Client:
 
     def _establish(self) -> _Conn:
         """Dial (with the connect timeout, TCP_NODELAY on — CLT-001), start
-        the reader thread, and run the profile handshake (CLT-002)."""
+        the reader thread, and run the configured handshake (CLT-002)."""
         host, port = self._endpoint.host, self._endpoint.port
         try:
             sock = socket.create_connection(
-                (host, port), timeout=self._config.connect_timeout
+                (host, port), timeout=self._client_config.connect_timeout
             )
         except TimeoutError as exc:
             raise errors.TimeoutError() from exc
@@ -361,7 +373,7 @@ class Client:
         return conn
 
     def _run_handshake(self, conn: _Conn) -> HandshakeInfo:
-        exchange = handshake_exchange(self._profile, self._config)
+        exchange = handshake_exchange(self._config, self._client_config)
         reply: Value | None = None
         while True:
             try:
@@ -376,7 +388,7 @@ class Client:
         """One handshake round-trip. Server rejections surface as the typed
         auth class, never a generic error (CLT-003)."""
         try:
-            return self._dispatch(conn, command, args, self._config.call_timeout)
+            return self._dispatch(conn, command, args, self._client_config.call_timeout)
         except _WriteFailed as failure:
             raise as_handshake_error(failure.error) from None
         except errors.ThunderError as exc:
@@ -390,9 +402,7 @@ class Client:
         demuxed response under the timeout (CLT-020)."""
         frame_id = self._alloc_id()
         request = Request(id=frame_id, command=command, args=args)
-        frame = wire.encode_frame(
-            request, max_frame_bytes=self._profile.max_frame_bytes
-        )
+        frame = wire.encode_frame(request, max_frame_bytes=self._config.max_frame_bytes)
         waiter = _Waiter()
         with conn.lock:
             # Register while checking liveness in the same critical section
@@ -421,14 +431,14 @@ class Client:
         response = waiter.response
         assert response is not None
         if response.err is not None:
-            raise from_server_message(response.err, self._profile.error_codes)
+            raise from_server_message(response.err, self._config.error_codes)
         return response.ok
 
     def _reader_loop(self, conn: _Conn) -> None:
-        """The background reader (CLT-010): reads frames with the profile
+        """The background reader (CLT-010): reads frames with the config's
         cap, demuxes by id, routes push frames (CLT-060), drops unknown ids
         (CLT-013), and poisons the connection on any failure (CLT-014)."""
-        cap = self._profile.max_frame_bytes
+        cap = self._config.max_frame_bytes
         while True:
             try:
                 header = _read_exact(conn.sock, 4)
@@ -446,7 +456,7 @@ class Client:
                 error = errors.ConnectionError(f"connection lost: {exc}")
                 break
             if response.id == PUSH_ID:
-                if self._profile.push is PushPolicy.ENABLED:
+                if self._config.push is PushPolicy.ENABLED:
                     handler = self._push_handler
                     if handler is not None and response.err is None:
                         try:
@@ -454,9 +464,9 @@ class Client:
                         except Exception:
                             pass  # a broken hook must not take the reader down
                     continue
-                # Protocol error under Reserved profiles: poison per CLT-014.
+                # Protocol error when push is RESERVED: poison per CLT-014.
                 error = errors.DecodeError(
-                    "server sent a push frame but the profile reserves PUSH_ID (CLT-060)"
+                    "server sent a push frame but the config reserves PUSH_ID (CLT-060)"
                 )
                 break
             with conn.lock:

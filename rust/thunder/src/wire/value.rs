@@ -8,8 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The wire value model — byte-compatible with `SynapValue` /
-/// `NexusValue` / `VectorizerValue` (WIRE-002).
+/// The wire value model (WIRE-002) — byte-compatible with the value
+/// models the family shipped before Thunder, by construction.
 ///
 /// `Map` is an insertion-ordered pair list because keys may be any value.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

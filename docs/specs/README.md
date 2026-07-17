@@ -24,7 +24,7 @@ Traceability chain: **PRD** requirement IDs (`FR-xx`, `NFR-xx`) → **DAG** task
 | Spec | Scope | Prefix | Freeze event |
 |---|---|---|---|
 | [SPEC-001](SPEC-001-wire-format.md) — Wire Format Binding | Binding to frozen wire v1, value model, canonical encoding rules, legacy tolerances, caps, PUSH_ID | `WIRE-` | **Already frozen** (family v1) |
-| [SPEC-002](SPEC-002-profiles.md) — Protocol Profiles | The six-dimension profile model, family registry (synap/nexus/vectorizer/lexum), custom profiles | `PRO-` | Registry schema freezes at G1 |
+| [SPEC-002](SPEC-002-configuration.md) — Protocol Configuration | The config model, THE standard (`Config::standard()`), and how an application configures itself. No product registry — Thunder ships one standard and zero product knowledge | `PRO-` | The standard freezes at G1 |
 | [SPEC-003](SPEC-003-client.md) — Client Contract | Connection lifecycle, handshakes, demux, timeouts, reconnect, push hook, typed errors, endpoint parsing, the uniform floor | `CLT-` | Public API shape freezes at G1 |
 | [SPEC-004](SPEC-004-server.md) — Server (Rust) | Accept loop, writer task, semaphore, session auth, dispatch trait, metrics, TLS | `SRV-` | Dispatch trait freezes at G1 |
 | [SPEC-005](SPEC-005-conformance.md) — Conformance & Testing | Golden-vector corpus format and groups, per-language loaders, reference cross-decode, pairwise fuzz, live interop, gate rules | `TST-` | Corpus format freezes at G1 |

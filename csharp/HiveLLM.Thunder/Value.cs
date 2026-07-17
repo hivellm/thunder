@@ -32,8 +32,8 @@ public enum ValueKind
 }
 
 /// <summary>
-/// The wire value model — the 8 variants byte-compatible with
-/// SynapValue / NexusValue / VectorizerValue (WIRE-002). Construct with the
+/// The wire value model — the 8 variants the frozen family wire v1 defines
+/// (WIRE-002), byte-compatible across every implementation of it. Construct with the
 /// static factories; extract with the As* accessors. Equality is structural,
 /// with floats compared by IEEE-754 bit pattern (NaN payloads and the -0.0
 /// sign bit are wire-significant, WIRE-014).

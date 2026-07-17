@@ -61,7 +61,7 @@ public sealed class Request : IEquatable<Request>
 /// <summary>
 /// One RPC response (WIRE-001). The result is either a <see cref="Value"/>
 /// or a verbatim error string; v1 carries no structured error object —
-/// conventions are prefix-based and profile-driven (WIRE-040). Serialized as
+/// conventions are prefix-based and config-driven (WIRE-040). Serialized as
 /// the array-encoded struct <c>[id, result]</c> with the externally-tagged
 /// result <c>{"Ok": value}</c> / <c>{"Err": string}</c> (WIRE-003).
 /// </summary>

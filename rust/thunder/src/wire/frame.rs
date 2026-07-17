@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(
             hex(&frame),
             "08 00 00 00 93 01 a4 50 49 4e 47 90",
-            "frame must match VECTORIZER_RPC.md §11 / corpus request-ping"
+            "frame must match the corpus request-ping vector"
         );
         let (decoded, consumed): (Request, usize) = decode_frame(&frame).unwrap().unwrap();
         assert_eq!(decoded, req);
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn map_shaped_request_decodes() {
-        // Synap Python/Go/Java (≤1.x) encode Request as a named map.
+        // Some pre-v1 encoders emit Request as a named map.
         let req = Request {
             id: 7,
             command: "GET".to_owned(),

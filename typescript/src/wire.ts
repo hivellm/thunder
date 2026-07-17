@@ -29,7 +29,7 @@
  * the length prefix **before** the body buffer is allocated
  * (WIRE-020/021).
  *
- * This module is pure: no sockets, no timers, no profile knowledge
+ * This module is pure: no sockets, no timers, no config knowledge
  * (WIRE-030) — it operates on byte buffers only.
  */
 
@@ -51,7 +51,8 @@ export const WIRE_VERSION = 1;
 export const PUSH_ID = 0xffff_ffff;
 
 /** Default frame-body cap: 64 MiB, checked against the length prefix
- * before any body allocation (WIRE-020). Operators tune it per profile. */
+ * before any body allocation (WIRE-020). An application tunes it on its
+ * own {@link Config}. */
 export const DEFAULT_MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
 const U32_MAX = 0xffff_ffff;
@@ -337,7 +338,8 @@ function toBytes(x: unknown): Uint8Array {
   }
   if (Array.isArray(x)) {
     // Legacy tolerance (WIRE-011): Bytes as an array of integers 0–255
-    // (Synap ≤1.x) normalizes to the Bytes variant. Emitting it is forbidden.
+    // (pre-v1 encoders) normalizes to the Bytes variant. Emitting it is
+    // forbidden.
     const out = new Uint8Array(x.length);
     for (let i = 0; i < x.length; i++) {
       const byte: unknown = x[i];
@@ -422,7 +424,7 @@ function toRequest(x: unknown): Request {
   }
   if (isRecord(x)) {
     // Legacy tolerance (WIRE-013): map-shaped Request
-    // {"id": …, "command": …, "args": …} (Synap Python/Go/Java ≤1.x).
+    // {"id": …, "command": …, "args": …} (pre-v1 encoders).
     return buildRequest(x["id"], x["command"], x["args"]);
   }
   throw new DecodeError("request body must be an array-encoded struct (or the legacy map shape)");

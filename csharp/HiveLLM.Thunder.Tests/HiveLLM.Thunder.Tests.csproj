@@ -15,7 +15,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!-- Test-only: corpus + profile-registry YAML loading (TST-020, PRO-010). -->
+    <!-- Test-only: corpus + standard-config YAML loading (TST-020, PRO-013). -->
     <PackageReference Include="YamlDotNet" Version="16.2.1" />
   </ItemGroup>
 

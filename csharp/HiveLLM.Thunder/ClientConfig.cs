@@ -14,7 +14,7 @@ public enum CredentialKind
 }
 
 /// <summary>
-/// Credentials for the profile handshake (CLT-002). Auth state is
+/// Credentials for the configured handshake (CLT-002). Auth state is
 /// per-connection and sticky — there are no per-call credentials (CLT-003).
 /// </summary>
 public sealed class Credentials
@@ -47,7 +47,7 @@ public sealed class Credentials
         return new Credentials(CredentialKind.ApiKey, apiKey, null);
     }
 
-    /// <summary>User + password (<c>AUTH [user, pass]</c> under AuthCommand profiles).</summary>
+    /// <summary>User + password (<c>AUTH [user, pass]</c> under AuthCommand configs).</summary>
     public static Credentials UserPass(string user, string pass)
     {
         ArgumentNullException.ThrowIfNull(user);
@@ -73,7 +73,7 @@ public sealed record ClientConfig
     /// </summary>
     public TimeSpan CallTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>Handshake credentials, when the profile wants them.</summary>
+    /// <summary>Handshake credentials, when the protocol config wants them.</summary>
     public Credentials? Credentials { get; init; }
 
     /// <summary>Client identifier sent in the <c>HELLO</c> map (HelloMandatory). Default <c>thunder-client</c>.</summary>

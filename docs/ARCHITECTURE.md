@@ -30,8 +30,8 @@ graph LR
         W["thunder::wire<br/>value · codec · caps<br/>(always on, pure, no I/O)"]
         C["thunder::client<br/>Rust (feature) · TS · Python · C#"]
         S["thunder::server<br/>(Rust, feature)"]
-        P["profiles<br/>(data: synap/nexus/vectorizer/lexum)"]
-        CONF["conformance/<br/>vectors · profiles · fuzz seeds"]
+        P["config<br/>(data: ONE standard + app overrides)"]
+        CONF["conformance/<br/>vectors · standard.yaml · fuzz seeds"]
         W --> C
         W --> S
         P --> C
@@ -91,13 +91,18 @@ graph LR
 | Optional TLS (`tokio-rustls`, config-gated) | Vectorizer (only server that ships it) | SRV-040 |
 | Dispatch trait (single product integration point) | new — generalizes what all three hand-rolled | SRV-020 |
 
-### 3.4 Profiles — the differences become data
+### 3.4 Config — one standard, and the differences become each app's data
 
-The six dimensions the products legitimately diverge on (handshake, hello style, push, caps,
-error convention, TLS) are a declarative `Profile`, shipped as a generated family registry —
-server and SDKs of one product import the same constant and cannot disagree
-([SPEC-002](specs/SPEC-002-profiles.md)). Custom construction stays public, so the registry never
-gates a new product.
+The dimensions an application can legitimately diverge on (handshake, hello style, push, caps,
+error convention, TLS) are a declarative `Config`. Thunder ships **one** — `Config::standard()`,
+pinned to `conformance/standard.yaml` in all four languages — and **no** named per-product
+configs: it was born from three products' RPC implementations, but it must serve implementations
+that do not exist yet ([SPEC-002](specs/SPEC-002-configuration.md)).
+
+An application that diverges overrides only what it differs on, **in its own repository**;
+untouched dimensions stay standard. Convergence is therefore "delete overrides until only identity
+(scheme, port) remains" — visible per application, with no coordinated Thunder release and nothing
+for Thunder to maintain about behavior it does not own.
 
 ### 3.5 Conformance — Vectorizer's rigor, family-wide, plus what nobody has
 

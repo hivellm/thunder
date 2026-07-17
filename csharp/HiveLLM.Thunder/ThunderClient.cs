@@ -17,8 +17,8 @@ namespace HiveLLM.Thunder;
 /// every pending call fails with the same typed error (CLT-014);</item>
 /// <item>writes are serialized behind a semaphore so frames never
 /// interleave (CLT-011);</item>
-/// <item>in-flight calls are bounded by the profile's
-/// <see cref="Profile.MaxInFlight"/> — excess calls wait, they are not
+/// <item>in-flight calls are bounded by the config's
+/// <see cref="Config.MaxInFlight"/> — excess calls wait, they are not
 /// refused (CLT-012);</item>
 /// <item>per-call timeouts and <see cref="CancellationToken"/>s remove the
 /// pending entry so a late response falls under the unknown-id drop
@@ -31,8 +31,12 @@ namespace HiveLLM.Thunder;
 /// under <see cref="PushPolicy.Enabled"/> and poison the connection under
 /// <see cref="PushPolicy.Reserved"/> (CLT-060).</item>
 /// </list>
-/// The demux architecture follows the family's best client (the Vectorizer
-/// Rust SDK reader-task + oneshot-map pattern).
+/// <para>
+/// The two configs are distinct and both are needed: <see cref="Config"/> is
+/// the application's <em>protocol</em> — the dialect, shared by everyone who
+/// talks to it — while <see cref="ClientConfig"/> is <em>this caller's</em>
+/// credentials, timeouts and client name, which never affect the dialect.
+/// </para>
 /// </summary>
 public sealed class ThunderClient : IDisposable, IAsyncDisposable
 {
@@ -46,11 +50,14 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     private static readonly TimeSpan BackoffBase = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan BackoffCap = TimeSpan.FromMilliseconds(500);
 
-    private readonly Profile _profile;
-    private readonly ClientConfig _config;
+    /// <summary>The application's protocol config — the dialect (PRO-001).</summary>
+    private readonly Config _config;
+
+    /// <summary>This caller's credentials/timeouts — never the dialect (CLT-002).</summary>
+    private readonly ClientConfig _clientConfig;
     private readonly Endpoint _endpoint;
 
-    /// <summary>In-flight bound sized <c>profile.MaxInFlight</c> (CLT-012).</summary>
+    /// <summary>In-flight bound sized <c>config.MaxInFlight</c> (CLT-012).</summary>
     private readonly SemaphoreSlim _inFlight;
 
     /// <summary>Serializes re-dial attempts so one caller reconnects at a time.</summary>
@@ -72,33 +79,38 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
 
     private HandshakeInfo _handshakeInfo = HandshakeInfo.Default;
 
-    private ThunderClient(Endpoint endpoint, Profile profile, ClientConfig config)
+    private ThunderClient(Endpoint endpoint, Config config, ClientConfig clientConfig)
     {
         _endpoint = endpoint;
-        _profile = profile;
         _config = config;
-        _inFlight = new SemaphoreSlim(profile.MaxInFlight, profile.MaxInFlight);
+        _clientConfig = clientConfig;
+        _inFlight = new SemaphoreSlim(config.MaxInFlight, config.MaxInFlight);
     }
 
     /// <summary>
-    /// Connect and run the profile handshake before user calls proceed
-    /// (CLT-001/002). <paramref name="endpoint"/> accepts every form of
-    /// <see cref="Endpoint.Parse"/> (CLT-070): <c>scheme://host[:port]</c>
-    /// or bare <c>host:port</c>.
+    /// Connect and run the handshake <paramref name="config"/> describes,
+    /// before user calls proceed (CLT-001/002). <paramref name="endpoint"/>
+    /// accepts every form of <see cref="Endpoint.Parse"/> (CLT-070):
+    /// <c>scheme://host[:port]</c> — where the scheme is the application's own
+    /// <see cref="Config.Scheme"/> — or bare <c>host:port</c>.
     /// </summary>
+    /// <param name="endpoint">The endpoint to dial (CLT-070).</param>
+    /// <param name="config">The application's protocol config — the dialect (PRO-001).</param>
+    /// <param name="clientConfig">This caller's credentials/timeouts; defaults apply when null.</param>
+    /// <param name="cancellationToken">Cancels the dial and handshake.</param>
     /// <exception cref="ThunderConnectionException">The endpoint is invalid or the dial failed.</exception>
     /// <exception cref="ThunderTimeoutException">The connect timeout elapsed (CLT-001).</exception>
     /// <exception cref="ThunderAuthException">The server rejected the handshake (CLT-003).</exception>
     public static async Task<ThunderClient> ConnectAsync(
         string endpoint,
-        Profile profile,
-        ClientConfig? config = null,
+        Config config,
+        ClientConfig? clientConfig = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
-        ArgumentNullException.ThrowIfNull(profile);
-        var parsed = Endpoint.Parse(endpoint);
-        var client = new ThunderClient(parsed, profile, config ?? new ClientConfig());
+        ArgumentNullException.ThrowIfNull(config);
+        var parsed = Endpoint.Parse(endpoint, config);
+        var client = new ThunderClient(parsed, config, clientConfig ?? new ClientConfig());
         try
         {
             var conn = await client.EstablishAsync(cancellationToken).ConfigureAwait(false);
@@ -133,7 +145,7 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
         string command,
         IReadOnlyList<Value>? args = null,
         CancellationToken cancellationToken = default) =>
-        CallAsync(command, args ?? System.Array.Empty<Value>(), _config.CallTimeout, cancellationToken);
+        CallAsync(command, args ?? System.Array.Empty<Value>(), _clientConfig.CallTimeout, cancellationToken);
 
     /// <summary>Issue one call with a per-call timeout override (CLT-020).</summary>
     /// <exception cref="ThunderServerException">The server answered with the Err arm.</exception>
@@ -279,8 +291,11 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     /// </summary>
     public long UnknownResponseDrops => Interlocked.Read(ref _unknownDrops);
 
-    /// <summary>The profile this client drives its behavior from.</summary>
-    public Profile Profile => _profile;
+    /// <summary>
+    /// The application's protocol config this client drives its behavior from
+    /// (PRO-001) — not to be confused with <see cref="ClientConfig"/>.
+    /// </summary>
+    public Config Config => _config;
 
     // ── internals ──────────────────────────────────────────────────────
 
@@ -400,7 +415,7 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Dial (with the connect timeout, TCP_NODELAY on — CLT-001), start the
-    /// background reader, and run the profile handshake (CLT-002).
+    /// background reader, and run the configured handshake (CLT-002).
     /// </summary>
     private async Task<Conn> EstablishAsync(CancellationToken cancellationToken)
     {
@@ -408,7 +423,7 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
         try
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(_config.ConnectTimeout);
+            timeoutCts.CancelAfter(_clientConfig.ConnectTimeout);
             try
             {
                 await tcp.ConnectAsync(_endpoint.Host, _endpoint.Port, timeoutCts.Token)
@@ -454,36 +469,37 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Run the profile handshake before user calls proceed (CLT-002):
+    /// Run the handshake the <see cref="Config"/> describes, before user
+    /// calls proceed (CLT-002):
     /// <see cref="Handshake.None"/> sends nothing;
     /// <see cref="Handshake.AuthCommand"/> sends the optional arg-less
-    /// <c>HELLO</c> (when the profile has one) then <c>AUTH</c> when
+    /// <c>HELLO</c> (when the config has one) then <c>AUTH</c> when
     /// credentials are configured;
     /// <see cref="Handshake.HelloMandatory"/> sends the <c>HELLO</c> map as
     /// the first frame and parses the reply.
     /// <para>
     /// Under <see cref="Handshake.AuthCommand"/>, no credentials means no
     /// <c>AUTH</c> frame — which is the correct behavior against a deployment
-    /// that does not require them (<c>auth_required</c> / <c>require_auth</c>
-    /// off). Enforcement is the server's policy, not the profile's.
+    /// that does not require them. Enforcement is the server's policy, not
+    /// the protocol config's (PRO-001a).
     /// </para>
     /// </summary>
     private async Task<HandshakeInfo> HandshakeAsync(Conn conn, CancellationToken cancellationToken)
     {
-        switch (_profile.Handshake)
+        switch (_config.Handshake)
         {
             case Handshake.None:
                 return HandshakeInfo.Default;
 
             case Handshake.AuthCommand:
             {
-                var credentials = _config.Credentials;
+                var credentials = _clientConfig.Credentials;
                 if (credentials is null)
                 {
                     return HandshakeInfo.Default;
                 }
 
-                if (_profile.HelloStyle == HelloStyle.ArgLess)
+                if (_config.HelloStyle == HelloStyle.ArgLess)
                 {
                     // Optional metadata HELLO — takes no arguments; the reply
                     // carries {server, version, proto, id, authenticated}.
@@ -513,25 +529,25 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
                 {
                     new(Value.Str("version"), Value.Int(Wire.WireVersion)),
                 };
-                switch (_config.Credentials?.Kind)
+                switch (_clientConfig.Credentials?.Kind)
                 {
                     case CredentialKind.Token:
-                        pairs.Add(new(Value.Str("token"), Value.Str(_config.Credentials.Secret)));
+                        pairs.Add(new(Value.Str("token"), Value.Str(_clientConfig.Credentials.Secret)));
                         break;
                     case CredentialKind.ApiKey:
-                        pairs.Add(new(Value.Str("api_key"), Value.Str(_config.Credentials.Secret)));
+                        pairs.Add(new(Value.Str("api_key"), Value.Str(_clientConfig.Credentials.Secret)));
                         break;
                     case CredentialKind.UserPass:
                         throw new ThunderAuthException(
                             "user/password credentials are not supported by HelloMandatory " +
-                            "profiles — use a token or api_key (PRO-001)");
+                            "configs — use a token or api_key (PRO-001)");
                     case null:
                         break;
                 }
 
                 pairs.Add(new(
                     Value.Str("client_name"),
-                    Value.Str(_config.ClientName ?? "thunder-client")));
+                    Value.Str(_clientConfig.ClientName ?? "thunder-client")));
                 var reply = await HandshakeCallAsync(
                         conn, "HELLO", new[] { Value.Map(pairs) }, cancellationToken)
                     .ConfigureAwait(false);
@@ -558,7 +574,7 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     {
         try
         {
-            return await DispatchAsync(conn, command, args, _config.CallTimeout, cancellationToken)
+            return await DispatchAsync(conn, command, args, _clientConfig.CallTimeout, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (WriteFailedException writeFailed)
@@ -657,11 +673,11 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
             return response.Value!;
         }
 
-        throw ThunderException.FromServerMessage(response.Error!, _profile.ErrorCodes);
+        throw ThunderException.FromServerMessage(response.Error!, _config.ErrorCodes);
     }
 
     /// <summary>
-    /// The background reader (CLT-010): reads frames with the profile cap
+    /// The background reader (CLT-010): reads frames with the config's cap
     /// checked between prefix and body allocation (WIRE-020), demuxes by id,
     /// routes push frames (CLT-060), drops unknown ids (CLT-013), and
     /// poisons the connection on any read failure (CLT-014).
@@ -676,11 +692,11 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
             {
                 await conn.Stream.ReadExactlyAsync(header).ConfigureAwait(false);
                 var length = BinaryPrimitives.ReadUInt32LittleEndian(header);
-                if (length > (uint)_profile.MaxFrameBytes)
+                if (length > (uint)_config.MaxFrameBytes)
                 {
                     // WIRE-020/021: refused on the prefix alone — the body
                     // buffer is never allocated.
-                    error = new ThunderFrameTooLargeException(length, _profile.MaxFrameBytes);
+                    error = new ThunderFrameTooLargeException(length, _config.MaxFrameBytes);
                     break;
                 }
 
@@ -699,7 +715,7 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
 
                 if (response.Id == Wire.PushId)
                 {
-                    if (_profile.Push == PushPolicy.Enabled)
+                    if (_config.Push == PushPolicy.Enabled)
                     {
                         var handler = Volatile.Read(ref _pushHandler);
                         if (handler is not null && response.IsOk)
@@ -719,7 +735,7 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
 
                     // Protocol error: poison per CLT-014.
                     error = new ThunderDecodeException(
-                        "server sent a push frame but the profile reserves PUSH_ID (CLT-060)");
+                        "server sent a push frame but the config reserves PUSH_ID (CLT-060)");
                     break;
                 }
 

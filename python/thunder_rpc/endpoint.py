@@ -1,10 +1,10 @@
 """Endpoint parsing (CLT-070/071).
 
-Accepts ``scheme://host[:port]`` for every scheme in the profile registry —
-scheme → default-port resolution is data-driven (PRO-012), products never
-fork the parser — plus bare ``host:port`` (RPC implied; the caller supplies
-the profile). ``http(s)://`` URLs are rejected with a pointer to the
-product's HTTP client: Thunder is RPC-only.
+Accepts ``scheme://host[:port]`` where the scheme is **the application's
+own**, taken from its :class:`~thunder_rpc.config.Config` — Thunder has no
+registry of schemes to consult and no product's parser to fork (PRO-012) —
+plus bare ``host:port`` (RPC implied). ``http(s)://`` URLs are rejected with
+a pointer to the application's HTTP client: Thunder is RPC-only.
 
 Parse failures use the :class:`~thunder_rpc.errors.ConnectionError` class —
 an endpoint that cannot be parsed is an endpoint that cannot be dialed.
@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 
 from . import errors
-from .profile import registry
+from .config import Config
 
 
 @dataclass(frozen=True)
@@ -25,23 +25,23 @@ class Endpoint:
 
     #: Host name or IP literal (IPv6 without brackets).
     host: str
-    #: Concrete port — explicit, or the scheme's registry default.
+    #: Concrete port — explicit, or the config's ``default_port``.
     port: int
 
 
-def parse_endpoint(text: str) -> Endpoint:
-    """Parse an endpoint string (CLT-070).
+def parse_endpoint(text: str, config: Config) -> Endpoint:
+    """Parse an endpoint string against the application's
+    :class:`~thunder_rpc.config.Config` (CLT-070).
 
     Accepted forms:
 
-    - ``scheme://host[:port]`` for every registered profile scheme
-      (``synap``, ``nexus``, ``vectorizer``, ``lexum``); a missing port
-      resolves to the scheme's registry default (CLT-071).
-    - bare ``host:port`` (RPC implied — the caller supplies the profile).
+    - ``scheme://host[:port]`` where ``scheme`` is ``config.scheme``; a
+      missing port resolves to ``config.default_port`` (CLT-071).
+    - bare ``host:port`` (RPC implied).
     - ``[v6::addr]:port`` / ``scheme://[v6::addr][:port]`` for IPv6 literals.
 
     ``http://`` / ``https://`` are rejected: Thunder is RPC-only; REST
-    endpoints belong to the product's HTTP client.
+    endpoints belong to the application's HTTP client.
     """
     text = text.strip()
     if "://" in text:
@@ -49,16 +49,15 @@ def parse_endpoint(text: str) -> Endpoint:
         scheme = scheme.lower()
         if scheme in ("http", "https"):
             raise _invalid(
-                f"'{text}' is an HTTP URL and Thunder is RPC-only - use the product's HTTP "
-                "client for REST endpoints, or pass an RPC endpoint such as "
-                "'vectorizer://host:port' or bare 'host:port'"
+                f"'{text}' is an HTTP URL and Thunder is RPC-only - use the application's "
+                "HTTP client for REST endpoints, or pass an RPC endpoint such as "
+                "'scheme://host:port' or bare 'host:port'"
             )
-        profile = next((p for p in registry() if p.scheme == scheme), None)
-        if profile is None:
-            known = ", ".join(p.scheme for p in registry())
+        if scheme != config.scheme:
             raise _invalid(
-                f"unknown endpoint scheme '{scheme}' - registered schemes: {known}; "
-                "or use bare 'host:port'"
+                f"endpoint scheme '{scheme}' does not match this client's configured "
+                f"scheme '{config.scheme}' - set the scheme on the Config, or use bare "
+                "'host:port'"
             )
         if rest.endswith("/"):
             rest = rest[:-1]
@@ -67,7 +66,7 @@ def parse_endpoint(text: str) -> Endpoint:
                 f"endpoint '{text}' must not carry a path - expected {scheme}://host[:port]"
             )
         host, port = _split_host_port(rest)
-        return Endpoint(host, port if port is not None else profile.default_port)
+        return Endpoint(host, port if port is not None else config.default_port)
     host, port = _split_host_port(text)
     if port is None:
         raise _invalid(

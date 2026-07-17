@@ -107,7 +107,7 @@ impl Session {
 /// `push = Enabled` profiles. It wraps the connection's writer channel and
 /// forces `id = PUSH_ID`, so product code can never collide with request
 /// ids. Clones stay valid for the connection's lifetime — subscription
-/// flows (Synap `SUBSCRIBE`) may emit long after the registering request
+/// flows (a subscribe-style command) may emit long after the registering request
 /// completed.
 #[derive(Debug, Clone)]
 pub struct PushSender {

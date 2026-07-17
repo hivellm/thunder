@@ -2,7 +2,7 @@
 
 > Evidence base: the four family profiles as committed data
 > (`conformance/profiles/{synap,nexus,vectorizer,lexum}.yaml`), the profile model
-> (`docs/specs/SPEC-002-profiles.md`), the wire binding (`docs/specs/SPEC-001-wire-format.md`), the
+> (`docs/specs/SPEC-002-configuration.md`), the wire binding (`docs/specs/SPEC-001-wire-format.md`), the
 > canonical wire spec (`docs/spec/rpc-wire-format.md` / `Nexus/docs/specs/rpc-wire-format.md`), and
 > the two prior studies this one builds on: Thunder's own feasibility analysis
 > (`docs/analysis/`, findings T-001..T-030) and the Lexum divergence table

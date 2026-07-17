@@ -517,11 +517,12 @@ async fn write_job(
 
 // ── Built-ins (SRV-011/012/014) ──────────────────────────────────────────────
 
-/// Build the HELLO reply from `ServerInfo` + profile + the
-/// `authenticate`/`capabilities` hooks — Thunder's job, never product code
-/// (SRV-014). Covers both family shapes pinned by the corpus handshake
-/// group: Nexus `{server, version, proto, id, authenticated}` and
-/// Vectorizer `{protocol_version, capabilities}`.
+/// Build the HELLO reply from `ServerInfo` + config + the
+/// `authenticate`/`capabilities` hooks — Thunder's job, never application
+/// code (SRV-014). Covers both shapes pinned by the corpus handshake
+/// group: the metadata shape `{server, version, proto, id, authenticated}`
+/// (`HelloStyle::ArgLess`) and the capabilities shape
+/// `{protocol_version, capabilities}` (`HelloStyle::MapPayload`).
 async fn handle_hello<D: Dispatch>(
     ctx: &ConnShared<D>,
     session: &Session,

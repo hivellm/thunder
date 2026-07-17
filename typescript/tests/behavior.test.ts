@@ -18,7 +18,6 @@ import {
   FrameReader,
   FrameTooLargeError,
   PUSH_ID,
-  Profiles,
   Response,
   ServerError,
   ThunderError,
@@ -27,15 +26,16 @@ import {
   decodeRequestBody,
   encodeResponse,
 } from "../src/index";
-import type { ClientOptions, Profile, Request } from "../src/index";
+import type { ClientOptions, Config, Request } from "../src/index";
 
 /**
- * A custom profile (PRO-020): no handshake, push reserved, no error
- * parsing — the neutral baseline the behavioral tests mutate.
+ * A custom config (PRO-020): no handshake, push reserved, no error
+ * parsing — the neutral baseline the behavioral tests mutate. Thunder ships
+ * no product configs, so the tests build their own — named for the shape
+ * they exercise — exactly as an application does.
  */
-function plainProfile(overrides: Partial<Profile> = {}): Profile {
+function plainConfig(overrides: Partial<Config> = {}): Config {
   return {
-    name: "test",
     scheme: "test",
     defaultPort: 0,
     handshake: "none",
@@ -47,6 +47,39 @@ function plainProfile(overrides: Partial<Profile> = {}): Profile {
     tls: "off",
     ...overrides,
   };
+}
+
+/**
+ * A config with the `auth_command` shape and **no** HELLO — the shape a
+ * deployment whose RPC path authenticates via `AUTH` uses.
+ */
+function authCommandConfig(overrides: Partial<Config> = {}): Config {
+  return plainConfig({
+    handshake: "auth_command",
+    helloStyle: "not_used",
+    errorCodes: "resp3_prefixes",
+    ...overrides,
+  });
+}
+
+/** The `auth_command` shape plus an optional arg-less HELLO. */
+function arglessHelloConfig(overrides: Partial<Config> = {}): Config {
+  return plainConfig({
+    handshake: "auth_command",
+    helloStyle: "arg_less",
+    errorCodes: "resp3_prefixes",
+    ...overrides,
+  });
+}
+
+/** The standard `hello_mandatory` + map-payload shape. */
+function helloMandatoryConfig(overrides: Partial<Config> = {}): Config {
+  return plainConfig({
+    handshake: "hello_mandatory",
+    helloStyle: "map_payload",
+    errorCodes: "bracket_code",
+    ...overrides,
+  });
 }
 
 function sleep(ms: number): Promise<void> {
@@ -177,10 +210,10 @@ async function startServer(): Promise<MockServer> {
 
 async function connect(
   server: MockServer,
-  profile: Profile,
+  config: Config,
   options?: ClientOptions,
 ): Promise<Client> {
-  const client = await Client.connect(server.addr, profile, options);
+  const client = await Client.connect(server.addr, config, options);
   cleanups.push(() => client.close());
   return client;
 }
@@ -189,7 +222,7 @@ async function connect(
 
 test("pipelined calls complete out of order", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn = await server.nextConn();
 
   const one = client.call("ONE");
@@ -208,7 +241,7 @@ test("pipelined calls complete out of order", async () => {
 
 test("the in-flight bound backpressures instead of refusing (CLT-012)", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile({ maxInFlight: 1 }));
+  const client = await connect(server, plainConfig({ maxInFlight: 1 }));
   const conn = await server.nextConn();
 
   const a = client.call("A");
@@ -228,7 +261,7 @@ test("the in-flight bound backpressures instead of refusing (CLT-012)", async ()
 
 test("a stray response id is dropped, never fatal (CLT-013)", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn = await server.nextConn();
 
   const call = client.call("GET");
@@ -245,9 +278,11 @@ test("a stray response id is dropped, never fatal (CLT-013)", async () => {
 
 test("the none handshake sends nothing before user calls", async () => {
   const server = await startServer();
-  // `plainProfile()` is the genuine `none` case (PRO-020). This test used to
-  // ride on the synap profile shape, which is `auth_command` since BN-023.
-  const client = await connect(server, plainProfile({ push: "enabled", errorCodes: "resp3_prefixes" }));
+  // `plainConfig()` is the genuine `none` case (PRO-020).
+  const client = await connect(
+    server,
+    plainConfig({ push: "enabled", errorCodes: "resp3_prefixes" }),
+  );
   expect(client.isAuthenticated).toBe(false);
 
   const pong = client.call("PING");
@@ -260,14 +295,15 @@ test("the none handshake sends nothing before user calls", async () => {
 });
 
 /**
- * The client half of the shape/policy split, on the profile BN-023 changed:
- * `synap` is `auth_command` now, but with no credentials configured it sends
- * no `AUTH` at all — exactly right against an open deployment (`require_auth`
- * off). It must also never send `HELLO` (`helloStyle: "not_used"`).
+ * The client half of the shape/policy split (PRO-001a): under the
+ * `auth_command` shape with no credentials configured the client sends no
+ * `AUTH` at all — exactly right against an open deployment, whose
+ * enforcement toggle is the server's policy, not a dialect. It must also
+ * never send `HELLO` (`helloStyle: "not_used"`).
  */
-test("the synap profile without credentials sends nothing", async () => {
+test("the auth_command shape without credentials sends nothing", async () => {
   const server = await startServer();
-  const client = await connect(server, Profiles.synap);
+  const client = await connect(server, authCommandConfig());
   expect(client.isAuthenticated).toBe(false);
 
   const pong = client.call("PING");
@@ -279,25 +315,24 @@ test("the synap profile without credentials sends nothing", async () => {
 });
 
 /**
- * BN-023 regression: the `synap` profile must be able to authenticate.
- *
- * It used to be `handshake: "none"`, so a credentialed client sent **nothing**
- * and could never reach a `require_auth` Synap. Synap's RPC path has an `AUTH`
- * handler (and no `HELLO` handler), so the profile is `auth_command` +
- * `helloStyle: "not_used"`: `AUTH` goes out, `HELLO` never does.
+ * BN-023 regression: the `auth_command` + `not_used` shape must be able to
+ * authenticate — a deployment whose RPC path has an `AUTH` handler and no
+ * `HELLO` handler is exactly this shape. Read as `handshake: "none"`, a
+ * credentialed client would send **nothing** and could never reach an
+ * auth-requiring deployment.
  */
-test("the synap profile sends AUTH and never HELLO", async () => {
+test("the auth_command shape sends AUTH and never HELLO", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, Profiles.synap, {
+  const clientPromise = Client.connect(server.addr, authCommandConfig(), {
     credentials: { type: "userPass", user: "root", pass: "hunter2" },
   });
   void clientPromise.catch(() => undefined);
 
   const conn = await server.nextConn();
-  // First frame must be AUTH — Synap has no HELLO handler at all.
+  // First frame must be AUTH — this shape has no HELLO command at all.
   const auth = await conn.nextRequest();
   expect(auth.command, "first frame must be AUTH, not HELLO").toBe("AUTH");
-  expect(auth.args, "Synap's AUTH <user> <password> form").toEqual([
+  expect(auth.args, "the AUTH <user> <password> form").toEqual([
     Value.str("root"),
     Value.str("hunter2"),
   ]);
@@ -316,7 +351,7 @@ test("the synap profile sends AUTH and never HELLO", async () => {
 
 test("auth_command sends HELLO then AUTH with an api key", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, Profiles.nexus, {
+  const clientPromise = Client.connect(server.addr, arglessHelloConfig(), {
     credentials: { type: "apiKey", apiKey: "k-123" },
   });
   void clientPromise.catch(() => undefined);
@@ -326,8 +361,8 @@ test("auth_command sends HELLO then AUTH with an api key", async () => {
   expect(hello.command).toBe("HELLO");
   expect(
     hello.args,
-    "Nexus RPC HELLO takes no arguments — the positional [Int(1)] is the " +
-      "RESP3 HELLO, a different surface (BN-023 errata)",
+    "the arg-less HELLO takes no arguments — a positional [Int(1)] would be " +
+      "the RESP3 HELLO, a different surface (BN-023 errata)",
   ).toEqual([]);
   conn.sendOk(hello.id, Value.null());
   const auth = await conn.nextRequest();
@@ -346,25 +381,9 @@ test("auth_command sends HELLO then AUTH with an api key", async () => {
   expect(Value.asStr(await pong)).toBe("PONG");
 });
 
-function nexusLike(): Profile {
-  return plainProfile({
-    handshake: "auth_command",
-    helloStyle: "arg_less",
-    errorCodes: "resp3_prefixes",
-  });
-}
-
-function vectorizerLike(): Profile {
-  return plainProfile({
-    handshake: "hello_mandatory",
-    helloStyle: "map_payload",
-    errorCodes: "bracket_code",
-  });
-}
-
 test("auth_command sends user + pass", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, nexusLike(), {
+  const clientPromise = Client.connect(server.addr, arglessHelloConfig(), {
     credentials: { type: "userPass", user: "admin", pass: "hunter2" },
   });
   void clientPromise.catch(() => undefined);
@@ -385,7 +404,7 @@ test("auth_command sends user + pass", async () => {
 
 test("auth_command without credentials sends nothing", async () => {
   const server = await startServer();
-  const client = await connect(server, nexusLike());
+  const client = await connect(server, arglessHelloConfig());
 
   const pong = client.call("PING");
   const conn = await server.nextConn();
@@ -398,7 +417,7 @@ test("auth_command without credentials sends nothing", async () => {
 
 test("hello_mandatory sends the HELLO map first and exposes capabilities", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, vectorizerLike(), {
+  const clientPromise = Client.connect(server.addr, helloMandatoryConfig(), {
     credentials: { type: "token", token: "tok-1" },
     clientName: "itest",
   });
@@ -430,7 +449,7 @@ test("hello_mandatory sends the HELLO map first and exposes capabilities", async
 
 test("a handshake rejection is a typed auth error (CLT-003)", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, vectorizerLike(), {
+  const clientPromise = Client.connect(server.addr, helloMandatoryConfig(), {
     credentials: { type: "apiKey", apiKey: "wrong" },
   });
   void clientPromise.catch(() => undefined);
@@ -454,7 +473,7 @@ test("a handshake rejection is a typed auth error (CLT-003)", async () => {
 
 test("the per-call timeout fires and the late response is dropped", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn = await server.nextConn();
 
   const slowCall = client.call("SLOW", [], { timeoutMs: 100 });
@@ -478,7 +497,7 @@ test("the per-call timeout fires and the late response is dropped", async () => 
 
 test("an AbortSignal cancels the call and removes the pending entry (CLT-021)", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn = await server.nextConn();
 
   const controller = new AbortController();
@@ -517,7 +536,7 @@ test("an AbortSignal cancels the call and removes the pending entry (CLT-021)", 
 
 test("reconnect after a server drop succeeds", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn1 = await server.nextConn();
 
   const first = client.call("A");
@@ -539,7 +558,7 @@ test("reconnect after a server drop succeeds", async () => {
 
 test("reconnect gives up after two attempts with a typed connection error", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, vectorizerLike(), {
+  const clientPromise = Client.connect(server.addr, helloMandatoryConfig(), {
     credentials: { type: "apiKey", apiKey: "k" },
   });
   void clientPromise.catch(() => undefined);
@@ -585,7 +604,7 @@ test("reconnect gives up after two attempts with a typed connection error", asyn
 
 test("RESP3 error mapping over the wire", async () => {
   const server = await startServer();
-  const client = await connect(server, nexusLike());
+  const client = await connect(server, arglessHelloConfig());
   const conn = await server.nextConn();
 
   const get = client.call("GET");
@@ -617,7 +636,7 @@ test("RESP3 error mapping over the wire", async () => {
 
 test("bracket error mapping over the wire", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, vectorizerLike(), {
+  const clientPromise = Client.connect(server.addr, helloMandatoryConfig(), {
     credentials: { type: "apiKey", apiKey: "k" },
   });
   void clientPromise.catch(() => undefined);
@@ -650,7 +669,7 @@ test("bracket error mapping over the wire", async () => {
 
 test("push frames route to the handler under enabled", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile({ push: "enabled" }));
+  const client = await connect(server, plainConfig({ push: "enabled" }));
   const conn = await server.nextConn();
 
   const pushed: Value[] = [];
@@ -668,9 +687,9 @@ test("push frames route to the handler under enabled", async () => {
   expect(client.unknownResponseDrops).toBe(0);
 });
 
-test("a push frame under a reserved profile poisons the connection", async () => {
+test("a push frame under a reserved config poisons the connection", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn1 = await server.nextConn();
 
   const call = client.call("GET");
@@ -698,13 +717,13 @@ test("a push frame under a reserved profile poisons the connection", async () =>
 
 test("an oversized inbound frame fails typed and poisons", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile({ maxFrameBytes: 64 }));
+  const client = await connect(server, plainConfig({ maxFrameBytes: 64 }));
   const conn1 = await server.nextConn();
 
   const call = client.call("GET");
   void call.catch(() => undefined);
   await conn1.nextRequest();
-  // A length prefix past the profile cap — the client must refuse on the
+  // A length prefix past the config cap — the client must refuse on the
   // prefix alone, before any body exists.
   const prefix = new Uint8Array(4);
   new DataView(prefix.buffer).setUint32(0, 1_000, true);
@@ -727,7 +746,7 @@ test("an oversized inbound frame fails typed and poisons", async () => {
 
 test("a malformed frame poisons with a decode error", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn = await server.nextConn();
 
   const call = client.call("GET");
@@ -750,7 +769,7 @@ test("a malformed frame poisons with a decode error", async () => {
 
 test("close is idempotent and fails in-flight calls", async () => {
   const server = await startServer();
-  const client = await connect(server, plainProfile());
+  const client = await connect(server, plainConfig());
   const conn = await server.nextConn();
 
   const pending = client.call("HANG");
@@ -779,7 +798,7 @@ test("close is idempotent and fails in-flight calls", async () => {
 test("an HTTP URL is rejected at connect", async () => {
   let caught: unknown;
   try {
-    await Client.connect("http://localhost:8080", plainProfile());
+    await Client.connect("http://localhost:8080", plainConfig());
   } catch (e) {
     caught = e;
   }

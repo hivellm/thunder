@@ -30,7 +30,7 @@ touched (WIRE-020/021), so a hostile prefix cannot exhaust memory. Decoders
 handle partial input by returning ``None`` ("need more bytes") and consume
 exactly one frame per decode (WIRE-022).
 
-This module is pure: no sockets, no timers, no profile dependency (WIRE-030).
+This module is pure: no sockets, no timers, no config dependency (WIRE-030).
 """
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ def _untag(obj: Any) -> Value:
             if isinstance(payload, (bytes, bytearray)):
                 return Value("bytes", bytes(payload))
             if isinstance(payload, list):
-                # WIRE-011: Synap <=1.x legacy int-array Bytes, decode-only.
+                # WIRE-011: pre-Thunder legacy int-array Bytes, decode-only.
                 return Value("bytes", _bytes_from_int_array(payload))
             raise DecodeError("Bytes variant needs bin or an int array")
         if tag == "Str":
@@ -171,7 +171,8 @@ def decode_request_body(body: bytes) -> Request:
             raise DecodeError(f"Request array needs 3 elements, got {len(obj)}")
         raw_id, command, args = obj
     elif isinstance(obj, dict):
-        # WIRE-013: Synap Python/Go/Java <=1.x legacy map-shaped Request.
+        # WIRE-013: pre-Thunder legacy map-shaped Request (dynamic-language
+        # donors emitted it).
         try:
             raw_id, command, args = obj["id"], obj["command"], obj["args"]
         except KeyError as exc:

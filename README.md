@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 ![Languages](https://img.shields.io/badge/targets-Rust%20%7C%20TypeScript%20%7C%20Python%20%7C%20C%23-orange.svg)
 
-[What is Thunder?](#-what-is-thunder) • [The Protocol](#-the-protocol) • [Architecture](#-architecture) • [Packages](#-packages) • [Profiles](#-family-profiles) • [Conformance](#-conformance) • [Benchmarks](#-benchmarks) • [Roadmap](#-roadmap) • [Documentation](#-documentation)
+[What is Thunder?](#-what-is-thunder) • [The Protocol](#-the-protocol) • [Architecture](#-architecture) • [Packages](#-packages) • [Configuration](#-configuration--one-standard-zero-product-knowledge) • [Conformance](#-conformance) • [Benchmarks](#-benchmarks) • [Roadmap](#-roadmap) • [Documentation](#-documentation)
 
 ---
 
@@ -45,7 +45,7 @@ Wire format **v1 — frozen**. Adding commands never bumps the wire version.
 - **Value**: `Null | Bool | Int(i64) | Float(f64) | Bytes | Str | Array | Map` — `Bytes` carries raw LE-f32 embeddings with no base64 tax; `Map` is an ordered pair-list (non-string keys allowed).
 - **Multiplexing**: client-chosen `id`s pipeline concurrent requests over one persistent TCP connection; responses return in completion order; `id = u32::MAX` is reserved for server push.
 - **Safety**: frame cap (default 64 MiB) validated against the prefix **before** allocation.
-- **Auth**: connection-sticky — `HELLO`/`AUTH` once, zero per-request overhead (style is profile-dependent, see [Profiles](#-family-profiles)).
+- **Auth**: connection-sticky — `HELLO`/`AUTH` once, zero per-request overhead (the handshake shape is configurable, see [Configuration](#-configuration--one-standard-zero-product-knowledge)).
 
 Canonical spec: `docs/spec/` (transplanted from `Nexus/docs/specs/rpc-wire-format.md` — see [§3 of the analysis](docs/analysis/03-conformance-and-versioning.md)).
 
@@ -58,9 +58,9 @@ Every HiveLLM server is Rust, so Thunder is **one full stack + three client-only
 | Layer | Rust | TypeScript / Python / C# | Contents |
 |---|---|---|---|
 | `wire` | ✅ | ✅ | Value model, `Request`/`Response`, frame codec, caps, `PUSH_ID`. Pure functions over buffers — zero I/O, zero product knowledge. |
-| `client` | ✅ | ✅ | Dial (+ optional TLS), handshake per profile, background reader with demux by id, connect + per-call timeouts, bounded in-flight, lazy reconnect, push hook, typed errors with prefix parsing. |
+| `client` | ✅ | ✅ | Dial (+ optional TLS), handshake per config, background reader with demux by id, connect + per-call timeouts, bounded in-flight, lazy reconnect, push hook, typed errors with prefix parsing. |
 | `server` | ✅ | — | Accept loop + mpsc writer task + spawn-per-request bounded by semaphore + atomic session auth + metrics. Products implement one trait: `dispatch(session, command, args)`. |
-| `profile` | ✅ | ✅ | The declarative product config (handshake style, error convention, caps, push, TLS) — see below. |
+| `config` | ✅ | ✅ | The declarative application config (handshake style, error convention, caps, push, TLS) — one standard, every dimension a knob; see below. |
 
 ### Uniform client floor
 
@@ -83,40 +83,65 @@ The per-product `-protocol` crates (`nexus-protocol`, `vectorizer-protocol`, `sy
 ### Planned usage (API sketch)
 
 ```rust
-// Rust (planned)
-use thunder::{Client, Profile};
+// Rust
+use thunder::{Client, ClientConfig, Config};
 
-let client = Client::connect("127.0.0.1:15503", Profile::vectorizer())
-    .token(jwt)
-    .await?;
+let app = Config::standard().scheme("myapp").port(9000);
+let client = Client::connect_with(
+    "myapp://127.0.0.1",
+    app,
+    ClientConfig::new().token(jwt),
+)
+.await?;
 let pong = client.call("PING", vec![]).await?;
 ```
 
 ```typescript
-// TypeScript (planned)
-import { Client, Profiles } from "@hivehub/thunder";
+// TypeScript
+import { Client, Config, Value } from "@hivehub/thunder";
 
-const client = await Client.connect("127.0.0.1:15475", Profiles.nexus, { apiKey });
-const result = await client.call("CYPHER", [Value.str("RETURN 1")]);
+const app = Config.standard().withScheme("myapp").withPort(9000);
+const client = await Client.connect("myapp://127.0.0.1", app, { apiKey });
+const result = await client.call("SEARCH", [Value.str("hello")]);
 ```
 
-## 🗂 Family Profiles
+## 🗂 Configuration — one standard, zero product knowledge
 
-Product differences are **data, not forks** — six dimensions (handshake, hello style, push, caps, error convention, TLS) shipped inside Thunder as a generated registry, so a product's server and SDKs can never disagree:
+Thunder was born from three products' RPC implementations, but it must serve implementations that
+do not exist yet. So it ships **one** configuration — the standard — and **no** named per-product
+profiles. Every dimension is a knob; an application supplies its own identity and overrides only
+what it actually differs on, **in its own repository**:
 
-| Profile | RPC port | Handshake | Error convention | Push |
-|---|---|---|---|---|
-| `Profile::synap()` | 15501 | `AUTH` (no `HELLO` — its RPC path has no HELLO handler) | RESP3-style prefixes (`ERR`/`NOAUTH`/`WRONGPASS`/`NOPERM`) | ✅ `SUBSCRIBE`, id `u32::MAX` |
-| `Profile::nexus()` | 15475 | arg-less `HELLO` optional + `AUTH` | RESP3-style prefixes (`ERR`/`NOAUTH`/`WRONGPASS`) | reserved |
-| `Profile::vectorizer()` | 15503 | `HELLO` mandatory (JWT / api-key / client_name) | `"[code] message"` prefix | reserved |
-| `Profile::lexum()` *(planned)* | 17001 | Vectorizer-style | `"[code] "` + auth prefixes | reserved |
+```rust
+// An application on the standard: identity, nothing else.
+let config = Config::standard().scheme("myapp").port(9000);
 
-A profile fixes the handshake **shape**, never the auth **policy**: whether a deployment demands
-credentials is its own config (Nexus `auth_required`, Synap `require_auth` — mirrored by Thunder's
-`ListenerConfig::auth_required`). A client with no credentials configured simply sends no `AUTH`,
-which is exactly right against an open deployment.
+// One that still diverges says so — here, in its own repo.
+let legacy = Config::standard()
+    .scheme("legacy").port(15501)
+    .handshake(Handshake::AuthCommand)   // AUTH, no HELLO
+    .push(PushPolicy::Enabled);          // ships a subscribe-style command
+```
 
-Custom `Profile { … }` construction stays public — new products are never blocked on a Thunder release.
+**The standard** (pinned to [`conformance/standard.yaml`](conformance/standard.yaml) in all four
+languages, so they can never disagree):
+
+| Dimension | Standard | Why |
+|---|---|---|
+| `handshake` / `hello_style` | mandatory `HELLO` + map payload | the only shape that negotiates `proto` and advertises capabilities — what an evolving protocol needs |
+| `push` | reserved | `PUSH_ID` is server→client only; *emitting* is a capability you opt into |
+| `max_frame_bytes` | 64 MiB | checked before allocation |
+| `max_in_flight` | 256 | per-connection bound |
+| `error_codes` | `[CODE] message` superset | a strict superset needs no negotiation |
+| `tls` | off | additive capability, never a dialect |
+
+`scheme` and `port` have no default: identity is yours, and Thunder has no opinion about it.
+
+A config fixes the handshake **shape**, never the auth **policy** — whether a deployment demands
+credentials is its own config (`auth_required`). A client with no credentials simply sends no
+`AUTH`, which is exactly right against an open deployment.
+
+Convergence is then visible and per-application: delete overrides until only identity remains.
 
 ## ✅ Conformance
 

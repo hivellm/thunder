@@ -186,8 +186,7 @@ fn tiny_profile() -> Config {
 }
 
 /// A custom config (PRO-020) with no handshake at all — the `Handshake::None`
-/// variant no registered family profile uses (BN-023: Synap, once thought to be
-/// this, authenticates via `AUTH`).
+/// variant, for a deployment that gates nothing.
 fn no_handshake_profile() -> Config {
     Config {
         scheme: "open",
@@ -321,7 +320,7 @@ async fn auth_command_profile_gates_until_auth_succeeds() {
 // ── SRV-014: HELLO reply shapes ─────────────────────────────────────────────
 
 #[tokio::test]
-async fn hello_reply_matches_nexus_shape() {
+async fn hello_reply_matches_the_metadata_shape() {
     let (handle, _dispatch) = start(argless_hello_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "HELLO", vec![Value::Int(1)]).await;
@@ -370,7 +369,7 @@ async fn hello_mandatory_handshake_grants_access_and_reports_capabilities() {
     ]);
     let response = call(&mut client, 1, "HELLO", vec![hello_arg]).await;
     let value = response.result.unwrap();
-    // Vectorizer reply shape (SRV-014), capabilities from the hook.
+    // Capabilities reply shape (SRV-014), capabilities from the hook.
     assert_eq!(value.map_get("protocol_version"), Some(&Value::Int(1)));
     assert_eq!(
         value.map_get("capabilities"),
@@ -417,17 +416,17 @@ async fn hello_mandatory_bad_credentials_error_allows_retry() {
 
 // ── SRV-011 / BN-023: handshake shape vs auth policy ────────────────────────
 
-/// The `synap` profile carries the `AuthCommand` *shape*; a deployment that
-/// requires credentials gates everything until `AUTH` lands. Before the BN-023
-/// errata this profile was `Handshake::None` and could not authenticate at all.
+/// The `AuthCommand` *shape* on a deployment that requires credentials gates
+/// everything until `AUTH` lands. Enforcement is the deployment's
+/// (`auth_required`), never the shape's (PRO-001a).
 #[tokio::test]
-async fn synap_profile_gates_until_auth_when_the_deployment_requires_it() {
+async fn auth_command_shape_gates_until_auth_when_the_deployment_requires_it() {
     let (handle, _dispatch) = start(auth_command_config()).await;
     let mut client = connect(&handle).await;
     // Pre-auth: gated.
     let response = call(&mut client, 1, "ECHO", vec![Value::Int(1)]).await;
     assert_eq!(response.result, Err(NOAUTH.to_owned()));
-    // Synap's AUTH forms: `AUTH <password>` and `AUTH <user> <password>`.
+    // The AUTH forms: `AUTH <password>` and `AUTH <user> <password>`.
     let response = call(
         &mut client,
         2,
@@ -516,10 +515,10 @@ async fn malformed_body_closes_only_that_connection() {
     assert_eq!(response.result, Ok(Value::Int(3)));
 }
 
-// ── SRV-013: push emission under the Synap profile ──────────────────────────
+// ── SRV-013: push emission when push is enabled ─────────────────────────────
 
 #[tokio::test]
-async fn push_frames_flow_under_the_synap_profile() {
+async fn push_frames_flow_when_push_is_enabled() {
     let (handle, dispatch) = start_open(auth_command_config()).await;
     let mut client = connect(&handle).await;
     let response = call(&mut client, 1, "SUBSCRIBE", vec![]).await;

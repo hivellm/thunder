@@ -1,10 +1,11 @@
-//! Error-string helpers for the two family conventions (SRV-021).
+//! Error-string helpers for the two modelled conventions (SRV-021).
 //!
 //! `Response.result` errors are plain strings that travel verbatim
-//! (WIRE-040); the family models exactly two prefix conventions —
-//! `ERR`/`NOAUTH`/`WRONGPASS`/`NOPERM` (Nexus, Synap) and `"[code] message"`
-//! (Vectorizer; Lexum composes both). These helpers exist so products
-//! never hand-roll them.
+//! (WIRE-040); Thunder models exactly two prefix conventions — the
+//! RESP3-style tokens `ERR`/`NOAUTH`/`WRONGPASS`/`NOPERM`, and the
+//! bracket-code form `"[code] message"`. `ErrorConvention::Both` composes
+//! them and is the standard, because a superset needs no negotiation.
+//! These helpers exist so applications never hand-roll the spellings.
 
 /// Family-pinned auth-required error (`Resp3Prefixes`, SRV-011).
 pub const NOAUTH: &str = "NOAUTH Authentication required.";
@@ -21,13 +22,13 @@ pub const WRONGPASS: &str = "WRONGPASS invalid username-password pair or user is
 /// classify it as an auth-class error (CLT-051).
 pub const NOPERM: &str = "NOPERM this command requires admin privileges";
 
-/// Format the Vectorizer/Lexum machine-readable convention:
-/// `"[<code>] <message>"` (PRO-014 `BracketCode`).
+/// Format the machine-readable convention: `"[<code>] <message>"`
+/// (PRO-014 `BracketCode`).
 pub fn format_bracket_code(code: &str, message: &str) -> String {
     format!("[{code}] {message}")
 }
 
-/// Format the Nexus/Synap generic-error convention: `"ERR <message>"`
+/// Format the generic-error convention: `"ERR <message>"`
 /// (PRO-014 `Resp3Prefixes`).
 pub fn format_err(message: &str) -> String {
     format!("ERR {message}")

@@ -115,7 +115,7 @@ fn starts_with_auth_prefix(message: &str) -> bool {
 }
 
 /// Split a leading `"[code] "` prefix. The code must be non-empty and
-/// whitespace-free (machine-readable, Vectorizer-style); anything else
+/// whitespace-free (machine-readable); anything else
 /// leaves the message untouched.
 fn split_bracket_code(message: &str) -> (Option<String>, &str) {
     if let Some(inner) = message.strip_prefix('[') {

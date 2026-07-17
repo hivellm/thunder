@@ -1,6 +1,6 @@
 //! Server metrics as plain atomics (SRV-030) — snapshot-friendly for any
 //! exporter, no metrics-framework dependency. Every series records **after**
-//! a successful socket write, per the Nexus writer contract; byte counts
+//! a successful socket write, per the writer contract; byte counts
 //! come from the decoder's frame size (in) and the single encoded response
 //! buffer (out) — nothing is ever re-encoded to be measured (SRV-007).
 

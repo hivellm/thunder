@@ -1,41 +1,41 @@
 /**
  * Endpoint parsing (CLT-070/071).
  *
- * Accepts `scheme://host[:port]` for every scheme in the profile
- * registry — scheme → default-port resolution is data-driven (PRO-012),
- * products never fork the parser — plus bare `host:port` (RPC implied;
- * the caller supplies the profile). `http(s)://` URLs are rejected with a
- * pointer to the product's HTTP client: Thunder is RPC-only.
+ * Accepts `scheme://host[:port]` where the scheme is **the application's
+ * own**, taken from its {@link Config} — Thunder has no registry of schemes
+ * to consult and no product's parser to fork (PRO-012) — plus bare
+ * `host:port` (RPC implied). `http(s)://` URLs are rejected with a pointer
+ * to the application's HTTP client: Thunder is RPC-only.
  *
  * Parse failures use the {@link ConnectionError} class — an endpoint that
  * cannot be parsed is an endpoint that cannot be dialed.
  */
 
+import type { Config } from "./config";
 import { ConnectionError } from "./errors";
-import { Profiles } from "./profile";
 
 /** A resolved RPC endpoint: host plus concrete port. */
 export interface Endpoint {
   /** Host name or IP literal (IPv6 without brackets). */
   host: string;
-  /** Concrete port — explicit, or the scheme's registry default. */
+  /** Concrete port — explicit, or the config's `defaultPort`. */
   port: number;
 }
 
 /**
- * Parse an endpoint string (CLT-070).
+ * Parse an endpoint string against the application's {@link Config}
+ * (CLT-070).
  *
  * Accepted forms:
- * - `scheme://host[:port]` for every registered profile scheme
- *   (`synap`, `nexus`, `vectorizer`, `lexum`); a missing port resolves to
- *   the scheme's registry default (CLT-071).
- * - bare `host:port` (RPC implied — the caller supplies the profile).
+ * - `scheme://host[:port]` where `scheme` is `config.scheme`; a missing
+ *   port resolves to `config.defaultPort` (CLT-071).
+ * - bare `host:port` (RPC implied).
  * - `[v6::addr]:port` / `scheme://[v6::addr][:port]` for IPv6 literals.
  *
  * `http://` / `https://` are rejected: Thunder is RPC-only; REST
- * endpoints belong to the product's HTTP client.
+ * endpoints belong to the application's HTTP client.
  */
-export function parseEndpoint(input: string): Endpoint {
+export function parseEndpoint(input: string, config: Config): Endpoint {
   const trimmed = input.trim();
   const schemeSplit = trimmed.indexOf("://");
   if (schemeSplit >= 0) {
@@ -43,19 +43,15 @@ export function parseEndpoint(input: string): Endpoint {
     let rest = trimmed.slice(schemeSplit + 3);
     if (scheme === "http" || scheme === "https") {
       throw invalid(
-        `'${trimmed}' is an HTTP URL and Thunder is RPC-only — use the product's HTTP ` +
+        `'${trimmed}' is an HTTP URL and Thunder is RPC-only — use the application's HTTP ` +
           `client for REST endpoints, or pass an RPC endpoint such as ` +
-          `'vectorizer://host:port' or bare 'host:port'`,
+          `'scheme://host:port' or bare 'host:port'`,
       );
     }
-    const profile = Profiles.registry().find((p) => p.scheme === scheme);
-    if (profile === undefined) {
-      const known = Profiles.registry()
-        .map((p) => p.scheme)
-        .join(", ");
+    if (scheme !== config.scheme) {
       throw invalid(
-        `unknown endpoint scheme '${scheme}' — registered schemes: ${known}; ` +
-          `or use bare 'host:port'`,
+        `endpoint scheme '${scheme}' does not match this client's configured scheme ` +
+          `'${config.scheme}' — set the scheme on the Config, or use bare 'host:port'`,
       );
     }
     if (rest.endsWith("/")) rest = rest.slice(0, -1);
@@ -65,7 +61,7 @@ export function parseEndpoint(input: string): Endpoint {
       );
     }
     const { host, port } = splitHostPort(rest);
-    return { host, port: port ?? profile.defaultPort };
+    return { host, port: port ?? config.defaultPort };
   }
   const { host, port } = splitHostPort(trimmed);
   if (port === undefined) {

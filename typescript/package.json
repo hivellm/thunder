@@ -1,7 +1,7 @@
 {
   "name": "@hivehub/thunder",
   "version": "0.1.0",
-  "description": "HiveLLM binary RPC (wire v1, frozen) — length-prefixed MessagePack codec + multiplexed, profile-driven client",
+  "description": "HiveLLM binary RPC (wire v1, frozen) — length-prefixed MessagePack codec + multiplexed, config-driven client",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -36,11 +36,7 @@
     "messagepack",
     "msgpack",
     "binary-protocol",
-    "hivellm",
-    "synap",
-    "nexus",
-    "vectorizer",
-    "lexum"
+    "hivellm"
   ],
   "publishConfig": {
     "access": "public"

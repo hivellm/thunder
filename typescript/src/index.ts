@@ -3,13 +3,15 @@
  *
  * One frame is `u32 LE length` + MessagePack body over the 8-variant
  * {@link Value} model (SPEC-001). The {@link Client} multiplexes
- * concurrent calls over one TCP connection, driven by a {@link Profile}
- * (SPEC-002/003).
+ * concurrent calls over one TCP connection, driven by the application's
+ * own {@link Config} (SPEC-002/003) — Thunder ships one standard and no
+ * product knowledge.
  *
  * ```ts
- * import { Client, Profiles, Value } from "@hivehub/thunder";
+ * import { Client, Config, Value } from "@hivehub/thunder";
  *
- * const client = await Client.connect("vectorizer://localhost", Profiles.vectorizer, {
+ * const config = Config.standard().withScheme("myapp").withPort(9000);
+ * const client = await Client.connect("myapp://localhost", config, {
  *   credentials: { type: "apiKey", apiKey: "secret" },
  * });
  * const pong = await client.call("PING");
@@ -52,15 +54,14 @@ export {
 } from "./errors";
 export type { ErrorClass } from "./errors";
 
-export { Profiles } from "./profile";
+export { Config, ConfigBuilder } from "./config";
 export type {
   ErrorConvention,
   Handshake,
   HelloStyle,
-  Profile,
   PushPolicy,
   TlsPolicy,
-} from "./profile";
+} from "./config";
 
 export { parseEndpoint } from "./endpoint";
 export type { Endpoint } from "./endpoint";

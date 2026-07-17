@@ -14,7 +14,7 @@
  * - writes never interleave (CLT-011): each request is one complete
  *   buffer handed to `socket.write()` on the single-threaded event loop,
  *   and Node preserves write order;
- * - in-flight calls are bounded by the profile's `maxInFlight` via a
+ * - in-flight calls are bounded by the config's `maxInFlight` via a
  *   semaphore — excess calls wait, they are not refused (CLT-012);
  * - per-call timeouts remove the pending entry so a late response falls
  *   under the unknown-id drop (CLT-020); `AbortSignal` cancellation does
@@ -28,8 +28,7 @@
  *   (CLT-060).
  *
  * The demux architecture mirrors the Rust reference client
- * (`thunder-client`), which follows the family's best client (the
- * Vectorizer reader-task + oneshot-map pattern).
+ * (`thunder::client`): a reader task plus a pending-call map.
  */
 
 import * as net from "node:net";
@@ -45,7 +44,7 @@ import {
   TimeoutError,
   classifyServerError,
 } from "./errors";
-import type { Profile, PushPolicy } from "./profile";
+import type { Config, PushPolicy } from "./config";
 import { FrameReader, PUSH_ID, decodeResponseBody, encodeRequest } from "./wire";
 import { Value } from "./value";
 import type { Response } from "./value";
@@ -62,7 +61,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 
 /**
- * Credentials for the profile handshake (CLT-002). Auth state is
+ * Credentials for the config's handshake (CLT-002). Auth state is
  * per-connection and sticky — there are no per-call credentials (CLT-003).
  */
 export type Credentials =
@@ -85,7 +84,7 @@ export interface ClientOptions {
   /** Default per-call timeout in milliseconds (CLT-020); override per
    * call via {@link CallOptions.timeoutMs}. Default 30 000. */
   callTimeoutMs?: number;
-  /** Handshake credentials, when the profile wants them. */
+  /** Handshake credentials, when the config wants them. */
   credentials?: Credentials;
   /** Client identifier sent in the `HELLO` map (`hello_mandatory`). */
   clientName?: string;
@@ -202,7 +201,7 @@ class Conn {
     });
   }
 
-  /** The reader path (CLT-010): extract frames under the profile cap,
+  /** The reader path (CLT-010): extract frames under the config's cap,
    * demux by id, route push frames (CLT-060), drop unknown ids (CLT-013),
    * poison on any malformed / oversized frame (CLT-014). */
   #onData(chunk: Uint8Array): void {
@@ -236,10 +235,10 @@ class Conn {
           }
         }
       } else {
-        // Protocol error under a Reserved profile: poison per CLT-014/060.
+        // Protocol error under a `reserved` config: poison per CLT-014/060.
         this.kill(
           new DecodeError(
-            "server sent a push frame but the profile reserves PUSH_ID (CLT-060)",
+            "server sent a push frame but the config reserves PUSH_ID (CLT-060)",
           ),
         );
       }
@@ -272,13 +271,13 @@ class Conn {
 }
 
 /**
- * A multiplexed, profile-driven Thunder RPC client (SPEC-003).
+ * A multiplexed, config-driven Thunder RPC client (SPEC-003).
  *
  * Every method may be called concurrently; calls multiplex over the one
  * connection and complete in server order, not submission order (CLT-010).
  */
 export class Client {
-  readonly #profile: Profile;
+  readonly #config: Config;
   readonly #endpoint: Endpoint;
   readonly #connectTimeoutMs: number;
   readonly #callTimeoutMs: number;
@@ -287,7 +286,7 @@ export class Client {
 
   /** Monotonic id allocator, skipping PUSH_ID (CLT-010). */
   #nextId = 1;
-  /** In-flight bound sized `profile.maxInFlight` (CLT-012). */
+  /** In-flight bound sized `config.maxInFlight` (CLT-012). */
   readonly #inFlight: Semaphore;
   /** Current connection; `null` after close. */
   #conn: Conn | null = null;
@@ -300,28 +299,29 @@ export class Client {
   #unknownDrops = 0;
   #handshakeInfo: HandshakeInfo = { authenticated: false, capabilities: [] };
 
-  private constructor(endpoint: Endpoint, profile: Profile, options: ClientOptions) {
+  private constructor(endpoint: Endpoint, config: Config, options: ClientOptions) {
     this.#endpoint = endpoint;
-    this.#profile = profile;
+    this.#config = config;
     this.#connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.#callTimeoutMs = options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
     this.#credentials = options.credentials;
     this.#clientName = options.clientName;
-    this.#inFlight = new Semaphore(profile.maxInFlight);
+    this.#inFlight = new Semaphore(config.maxInFlight);
   }
 
   /**
-   * Dial, then run the profile handshake before resolving (CLT-001/002).
+   * Dial, then run the config's handshake before resolving (CLT-001/002).
    *
    * `endpoint` accepts every form of {@link parseEndpoint} (CLT-070):
-   * `scheme://host[:port]` or bare `host:port`.
+   * `scheme://host[:port]` — the scheme being the application's own — or
+   * bare `host:port`.
    */
   static async connect(
     endpoint: string,
-    profile: Profile,
+    config: Config,
     options: ClientOptions = {},
   ): Promise<Client> {
-    const client = new Client(parseEndpoint(endpoint), profile, options);
+    const client = new Client(parseEndpoint(endpoint, config), config, options);
     client.#conn = await client.#establish();
     return client;
   }
@@ -329,7 +329,7 @@ export class Client {
   /**
    * Issue one call (CLT-010/020). Rejects with a typed
    * {@link ThunderError}; server `Err` strings are classified per the
-   * profile's error convention (CLT-050).
+   * config's error convention (CLT-050).
    */
   async call(
     command: string,
@@ -407,9 +407,9 @@ export class Client {
     return this.#unknownDrops;
   }
 
-  /** The profile this client drives its behavior from. */
-  get profile(): Profile {
-    return this.#profile;
+  /** The config this client drives its behavior from. */
+  get config(): Config {
+    return this.#config;
   }
 
   // ── internals ──────────────────────────────────────────────────────────
@@ -476,11 +476,11 @@ export class Client {
   }
 
   /** Dial (with the connect timeout, TCP_NODELAY on — CLT-001), wire the
-   * reader, and run the profile handshake (CLT-002). */
+   * reader, and run the config's handshake (CLT-002). */
   async #establish(): Promise<Conn> {
     const socket = await this.#dial();
-    const conn = new Conn(socket, this.#profile.maxFrameBytes, {
-      pushPolicy: this.#profile.push,
+    const conn = new Conn(socket, this.#config.maxFrameBytes, {
+      pushPolicy: this.#config.push,
       getPushHandler: () => this.#pushHandler,
       onUnknownDrop: () => {
         this.#unknownDrops += 1;
@@ -527,25 +527,24 @@ export class Client {
   }
 
   /**
-   * Run the profile handshake before user calls proceed (CLT-002):
+   * Run the configured handshake before user calls proceed (CLT-002):
    * `none` sends nothing; `auth_command` sends the optional arg-less
-   * `HELLO` (when the profile has one) then `AUTH` when credentials are
+   * `HELLO` (when the config has one) then `AUTH` when credentials are
    * configured; `hello_mandatory` sends the `HELLO` map as the first frame
    * and parses the reply.
    *
    * Under `auth_command`, no credentials means no `AUTH` frame — which is
-   * the correct behavior against a deployment that does not require them
-   * (`auth_required` / `require_auth` off). Enforcement is the server's
-   * policy, not the profile's.
+   * the correct behavior against a deployment that does not require them.
+   * Enforcement is the server's policy, not the config's (PRO-001a).
    */
   async #handshake(conn: Conn): Promise<HandshakeInfo> {
-    switch (this.#profile.handshake) {
+    switch (this.#config.handshake) {
       case "none":
         return { authenticated: false, capabilities: [] };
       case "auth_command": {
         const credentials = this.#credentials;
         if (!credentials) return { authenticated: false, capabilities: [] };
-        if (this.#profile.helloStyle === "arg_less") {
+        if (this.#config.helloStyle === "arg_less") {
           // Optional metadata HELLO — takes no arguments; the reply carries
           // {server, version, proto, id, authenticated}. Credentials go in
           // AUTH below.
@@ -570,8 +569,8 @@ export class Client {
             pairs.push([Value.str("api_key"), Value.str(credentials.apiKey)]);
           } else {
             throw new AuthError(
-              "user/password credentials are not supported by HelloMandatory " +
-                "profiles — use a token or api_key (PRO-001)",
+              "user/password credentials are not supported under the " +
+                "hello_mandatory handshake — use a token or api_key (PRO-001)",
             );
           }
         }
@@ -661,7 +660,7 @@ export class Client {
           } else {
             finish({
               kind: "fatal",
-              error: classifyServerError(response.result.err, this.#profile.errorCodes),
+              error: classifyServerError(response.result.err, this.#config.errorCodes),
             });
           }
         },

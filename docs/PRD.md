@@ -52,7 +52,7 @@ The family's default SDK transport is one protocol implemented many times ([anal
 2. **Byte-compatibility as CI property** — corpus, reference cross-decode, pairwise fuzz.
 3. **Uniform client quality floor** in every language (pipelining, caps, timeouts, reconnect, typed errors, push hook).
 4. **Zero per-product protocol packages** — servers and SDKs consume Thunder from the registries; the three existing `-protocol` crates are dissolved.
-5. **Profiles, not forks** — Synap/Nexus/Vectorizer/Lexum differences expressed declaratively; new family projects onboard by picking values.
+5. **One standard, zero product knowledge** — Thunder ships a single canonical config and a knob for every dimension; each application configures itself in its own repository. No named per-product profiles: a protocol library that must serve implementations which do not exist yet cannot ship a list of the ones that did.
 6. **Provable performance** — a transport-isolated shootout vs Bolt, RESP3 and HTTP with an always-win release gate.
 
 ### Non-goals
@@ -86,13 +86,13 @@ Priority: **P0** = required for 1.0.0 · **P1** = required for the fast-follow r
 | FR-05 | P0 | `PUSH_ID = u32::MAX` reserved and routed distinctly from request/response ids |
 | FR-06 | P0 | The wire layer is pure (no I/O, no product knowledge) in every language |
 
-### Profiles ([SPEC-002](specs/SPEC-002-profiles.md))
+### Configuration ([SPEC-002](specs/SPEC-002-configuration.md))
 
 | ID | P | Requirement |
 |---|---|---|
-| FR-10 | P0 | A declarative `Profile` covering: handshake style, hello payload style, push policy, frame cap, in-flight bound, error convention, TLS policy |
-| FR-11 | P0 | Family profile registry (synap, nexus, vectorizer, lexum) generated from data files in `conformance/profiles/`, identical across languages |
-| FR-12 | P0 | Public custom-profile construction — external/new products never blocked on a Thunder release |
+| FR-10 | P0 | A declarative `Config` covering: handshake style, hello payload style, push policy, frame cap, in-flight bound, error convention, TLS policy |
+| FR-11 | P0 | Exactly ONE shipped configuration — the standard — defined in `conformance/standard.yaml` and pinned identically in every language. No named per-product configs anywhere in any library |
+| FR-12 | P0 | Public `Config` construction (builder + plain literal) — any application, including one that does not exist yet, uses Thunder without a Thunder release |
 
 ### Client ([SPEC-003](specs/SPEC-003-client.md))
 
@@ -104,7 +104,7 @@ Priority: **P0** = required for 1.0.0 · **P1** = required for the fast-follow r
 | FR-23 | P0 | Lazy reconnect with capped attempts and backoff; in-flight calls fail with a typed connection error |
 | FR-24 | P0 | Typed errors with prefix parsing per profile: `NOAUTH`/`WRONGPASS` → auth error; `"[code] message"` → structured `code` field |
 | FR-25 | P0 | Push hook: frames with `PUSH_ID` delivered to a registered handler (profile-gated); never matched to pending calls |
-| FR-26 | P0 | Endpoint parsing with product scheme registration (`nexus://`, `vectorizer://`, `synap://`, bare `host:port`) |
+| FR-26 | P0 | Endpoint parsing against the caller's config: `<its scheme>://host[:port]` or bare `host:port`; no scheme table in Thunder |
 | FR-27 | P0 | TCP_NODELAY on; bounded in-flight per connection per profile |
 | FR-28 | P0 | Python ships sync **and** async clients |
 | FR-29 | P1 | Optional TLS on the client (rustls / native per language) |

@@ -14,12 +14,12 @@ use crate::server::session::Session;
 
 /// Credentials parsed by Thunder from `HELLO`/`AUTH` payloads (SRV-012).
 ///
-/// - `AUTH <api_key>` → [`Credentials::ApiKey`] (Nexus single-arg form)
+/// - `AUTH <api_key>` → [`Credentials::ApiKey`] (single-arg form)
 /// - `AUTH <user> <pass>` → [`Credentials::UserPass`]
-/// - `HELLO {token: …}` → [`Credentials::Token`] (Vectorizer/Lexum map)
+/// - `HELLO {token: …}` → [`Credentials::Token`] (map payload)
 /// - `HELLO {api_key: …}` → [`Credentials::ApiKey`]
-/// - `HELLO {}` / missing map → [`Credentials::None`] — products with auth
-///   disabled accept it; everyone else rejects it.
+/// - `HELLO {}` / missing map → [`Credentials::None`] — a deployment with
+///   `auth_required = false` accepts it; everyone else rejects it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Credentials {
     /// A bare API key.

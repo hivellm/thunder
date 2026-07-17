@@ -13,8 +13,8 @@ export const I64_MIN = -(2n ** 63n);
 /** Largest i64 value (`i64::MAX`). */
 export const I64_MAX = 2n ** 63n - 1n;
 
-/** The wire value model (WIRE-002) — byte-compatible with the family's
- * `SynapValue` / `NexusValue` / `VectorizerValue`. */
+/** The wire value model (WIRE-002) — byte-compatible across every
+ * Thunder language and with the family's pre-Thunder value types. */
 export type Value =
   | { kind: "null" }
   | { kind: "bool"; value: boolean }
@@ -151,7 +151,7 @@ export interface Request {
 
 /**
  * `Response.result`: `{ ok: Value }` or `{ err: string }` — v1 carries no
- * structured error object; conventions are prefix-based and profile-driven
+ * structured error object; conventions are prefix-based and config-driven
  * (WIRE-040).
  */
 export type ResponseResult = { ok: Value } | { err: string };

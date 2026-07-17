@@ -231,8 +231,8 @@ internal static class WireCodec
     }
 
     /// <summary>
-    /// Bytes payload: canonical bin, or the Synap ≤1.x legacy int-array form
-    /// normalized on decode (WIRE-011). Emitting the legacy form is forbidden.
+    /// Bytes payload: canonical bin, or the legacy int-array form normalized
+    /// on decode (WIRE-011). Emitting the legacy form is forbidden.
     /// </summary>
     private static Value ReadBytesPayload(ref MessagePackReader reader)
     {
@@ -285,7 +285,7 @@ internal static class WireCodec
 
             case MessagePackType.Map:
             {
-                // Map-shaped Request tolerance (WIRE-013, Synap ≤1.x legacy).
+                // Map-shaped Request tolerance (WIRE-013, legacy encoders).
                 var n = reader.ReadMapHeader();
                 uint? id = null;
                 string? command = null;

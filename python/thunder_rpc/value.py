@@ -30,8 +30,8 @@ KINDS = ("null", "bool", "int", "float", "bytes", "str", "array", "map")
 
 @dataclass(frozen=True)
 class Value:
-    """One wire value — byte-compatible with ``SynapValue`` / ``NexusValue`` /
-    ``VectorizerValue`` (WIRE-002).
+    """One wire value — byte-compatible with the donor implementations' own
+    value models (WIRE-002).
 
     Construct through the factories (``Value.int(42)``, ``Value.map(pairs)``,
     ...) which validate and normalize; ``kind`` is one of :data:`KINDS`.
@@ -183,7 +183,7 @@ class Request:
 class Response:
     """One RPC response (WIRE-001). Exactly one of ``ok`` / ``err`` is set;
     v1 carries no structured error object — conventions are prefix-based and
-    profile-driven (WIRE-040).
+    config-driven (WIRE-040).
     """
 
     id: int

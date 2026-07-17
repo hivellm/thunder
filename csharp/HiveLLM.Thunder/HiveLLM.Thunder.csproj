@@ -9,7 +9,7 @@
     <PackageId>HiveLLM.Thunder</PackageId>
     <Version>0.1.0</Version>
     <Authors>HiveLLM</Authors>
-    <Description>HiveLLM binary RPC (wire v1) - length-prefixed MessagePack codec and multiplexed TCP client with the family profiles (Synap, Nexus, Vectorizer, Lexum).</Description>
+    <Description>HiveLLM binary RPC (wire v1) - length-prefixed MessagePack codec and multiplexed TCP client, driven by a declarative protocol config any application supplies (SPEC-001/002/003).</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/hivellm/thunder</RepositoryUrl>

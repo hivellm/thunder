@@ -186,12 +186,12 @@ async fn none_handshake_sends_nothing_before_user_calls() {
     server.await.unwrap();
 }
 
-/// The client half of the shape/policy split, on the profile BN-023 changed:
-/// `synap` is `AuthCommand` now, but with no credentials configured it sends
-/// no `AUTH` at all — exactly right against an open deployment
-/// (`require_auth` off). It must also never send `HELLO` (`HelloStyle::NotUsed`).
+/// The client half of the shape/policy split: an `AuthCommand` shape with no
+/// credentials configured sends no `AUTH` at all — exactly right against an
+/// open deployment (`auth_required` off). It must also never send `HELLO`
+/// under `HelloStyle::NotUsed`.
 #[tokio::test]
-async fn synap_profile_without_credentials_sends_nothing() {
+async fn auth_command_shape_without_credentials_sends_nothing() {
     let (listener, addr) = listener().await;
     let server = tokio::spawn(async move {
         let (mut r, mut w) = accept_split(&listener).await;
@@ -243,18 +243,18 @@ async fn auth_command_handshake_sends_hello_then_auth_api_key() {
     server.await.unwrap();
 }
 
-/// BN-023 regression: the `synap` profile must be able to authenticate.
+/// BN-023 regression: an `AuthCommand` + `HelloStyle::NotUsed` shape must be
+/// able to authenticate — `AUTH` goes out, `HELLO` never does.
 ///
-/// It used to be `Handshake::None`, so a credentialed client sent **nothing**
-/// and could never reach a `require_auth` Synap. Synap's RPC path has an `AUTH`
-/// handler (and no `HELLO` handler), so the profile is `AuthCommand` +
-/// `HelloStyle::NotUsed`: `AUTH` goes out, `HELLO` never does.
+/// This shape was once mis-modelled as `Handshake::None`, so a credentialed
+/// client sent **nothing** and could never reach a deployment that required
+/// credentials.
 #[tokio::test]
-async fn synap_profile_sends_auth_and_never_hello() {
+async fn auth_command_shape_sends_auth_and_never_hello() {
     let (listener, addr) = listener().await;
     let server = tokio::spawn(async move {
         let (mut r, mut w) = accept_split(&listener).await;
-        // First frame must be AUTH — Synap has no HELLO handler at all.
+        // First frame must be AUTH — this shape has no HELLO at all.
         let auth = read_req(&mut r).await;
         assert_eq!(auth.command, "AUTH", "first frame must be AUTH, not HELLO");
         assert_eq!(
@@ -263,7 +263,7 @@ async fn synap_profile_sends_auth_and_never_hello() {
                 Value::Str("root".to_owned()),
                 Value::Str("hunter2".to_owned())
             ],
-            "Synap's AUTH <user> <password> form"
+            "the AUTH <user> <password> form"
         );
         send_ok(&mut w, auth.id, Value::Str("OK".to_owned())).await;
         let ping = read_req(&mut r).await;

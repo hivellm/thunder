@@ -11,7 +11,7 @@
 //!   pending call fails with the same typed error (CLT-014);
 //! - writes are serialized behind an async mutex so frames never
 //!   interleave (CLT-011);
-//! - in-flight calls are bounded by the profile's `max_in_flight` via a
+//! - in-flight calls are bounded by the config's `max_in_flight` via a
 //!   semaphore — excess calls wait, they are not refused (CLT-012);
 //! - per-call timeouts remove the pending entry so a late response falls
 //!   under the unknown-id drop (CLT-020);
@@ -53,7 +53,7 @@ const BACKOFF_CAP: Duration = Duration::from_millis(500);
 /// Re-dial budget when a call finds the connection dead (CLT-030).
 const RECONNECT_ATTEMPTS: u32 = 2;
 
-/// Credentials for the profile handshake (CLT-002). Auth state is
+/// Credentials for the configured handshake (CLT-002). Auth state is
 /// per-connection and sticky — there are no per-call credentials
 /// (CLT-003).
 #[derive(Debug, Clone)]
@@ -82,7 +82,7 @@ pub struct ClientConfig {
     /// Default per-call timeout (CLT-020); override per call with
     /// [`Client::call_with_timeout`]. Default 30 s.
     pub call_timeout: Duration,
-    /// Handshake credentials, when the profile wants them.
+    /// Handshake credentials, when the configured handshake wants them.
     pub credentials: Option<Credentials>,
     /// Client identifier sent in the `HELLO` map (`HelloMandatory`).
     pub client_name: Option<String>,
@@ -133,7 +133,7 @@ impl ClientConfig {
         self
     }
 
-    /// Authenticate with user + password (`AuthCommand` profiles).
+    /// Authenticate with user + password (`AuthCommand` handshakes).
     #[must_use]
     pub fn user_pass(mut self, user: impl Into<String>, pass: impl Into<String>) -> Self {
         self.credentials = Some(Credentials::UserPass {
@@ -237,17 +237,19 @@ impl DispatchError {
     }
 }
 
-/// A multiplexed, profile-driven Thunder RPC client (SPEC-003).
+/// A multiplexed, config-driven Thunder RPC client (SPEC-003).
 ///
 /// Cheap to share behind an `Arc`; every method takes `&self` and calls
 /// may run concurrently (CLT-010).
 pub struct Client {
-    profile: Config,
-    config: ClientConfig,
+    /// The application's protocol config (SPEC-002): what the peer speaks.
+    config: Config,
+    /// This caller's credentials and timeouts — a different thing.
+    client_config: ClientConfig,
     endpoint: Endpoint,
     /// Monotonic id allocator, skipping `PUSH_ID` (CLT-010).
     next_id: AtomicU32,
-    /// In-flight bound sized `profile.max_in_flight` (CLT-012).
+    /// In-flight bound sized `config.max_in_flight` (CLT-012).
     in_flight: Semaphore,
     /// Current connection; `None` after close.
     conn: StdMutex<Option<Arc<Conn>>>,
@@ -262,25 +264,35 @@ pub struct Client {
 }
 
 impl Client {
-    /// Connect with default [`ClientConfig`] and run the profile
+    /// Connect with default [`ClientConfig`] and run the configured
     /// handshake (CLT-001/002).
+    ///
+    /// `config` is the **application's protocol config** (SPEC-002) — the
+    /// handshake, caps and error conventions of the thing you are dialing.
+    /// Not to be confused with [`ClientConfig`], which is *this caller's*
+    /// credentials and timeouts; see [`Client::connect_with`].
     ///
     /// `endpoint` accepts every form of [`parse_endpoint`] (CLT-070):
     /// `scheme://host[:port]` or bare `host:port`.
-    pub async fn connect(endpoint: &str, profile: Config) -> Result<Self, ClientError> {
-        Self::connect_with(endpoint, profile, ClientConfig::default()).await
+    pub async fn connect(endpoint: &str, config: Config) -> Result<Self, ClientError> {
+        Self::connect_with(endpoint, config, ClientConfig::default()).await
     }
 
-    /// Connect with explicit configuration.
+    /// Connect with an explicit [`ClientConfig`].
+    ///
+    /// The two configs are different things and both are required:
+    /// - `config`: the application's **protocol** config (SPEC-002) — what
+    ///   the peer speaks;
+    /// - `client_config`: **this caller's** credentials and timeouts.
     pub async fn connect_with(
         endpoint: &str,
-        profile: Config,
-        config: ClientConfig,
+        config: Config,
+        client_config: ClientConfig,
     ) -> Result<Self, ClientError> {
-        let endpoint = parse_endpoint(endpoint, &profile)?;
+        let endpoint = parse_endpoint(endpoint, &config)?;
         let client = Self {
             next_id: AtomicU32::new(1),
-            in_flight: Semaphore::new(profile.max_in_flight),
+            in_flight: Semaphore::new(config.max_in_flight),
             conn: StdMutex::new(None),
             reconnect: TokioMutex::new(()),
             closed: AtomicBool::new(false),
@@ -288,8 +300,8 @@ impl Client {
             unknown_drops: Arc::new(AtomicU64::new(0)),
             handshake_info: StdMutex::new(HandshakeInfo::default()),
             endpoint,
-            profile,
             config,
+            client_config,
         };
         let conn = client.establish().await?;
         *lock(&client.conn) = Some(conn);
@@ -306,7 +318,7 @@ impl Client {
         args: Vec<Value>,
     ) -> Result<Value, ClientError> {
         let command = command.into();
-        self.call_with_timeout(&command, args, self.config.call_timeout)
+        self.call_with_timeout(&command, args, self.client_config.call_timeout)
             .await
     }
 
@@ -384,9 +396,10 @@ impl Client {
         self.unknown_drops.load(Ordering::Relaxed)
     }
 
-    /// The profile this client drives its behavior from.
-    pub fn profile(&self) -> &Config {
-        &self.profile
+    /// The application's protocol config this client drives its behavior
+    /// from (SPEC-002).
+    pub fn config(&self) -> &Config {
+        &self.config
     }
 
     // ── internals ──────────────────────────────────────────────────────
@@ -462,15 +475,16 @@ impl Client {
     /// the reader task, and run the profile handshake (CLT-002).
     async fn establish(&self) -> Result<Arc<Conn>, ClientError> {
         let addr = (self.endpoint.host.as_str(), self.endpoint.port);
-        let stream = tokio::time::timeout(self.config.connect_timeout, TcpStream::connect(addr))
-            .await
-            .map_err(|_| ClientError::Timeout)?
-            .map_err(|e| ClientError::Connection {
-                message: format!(
-                    "connect to {}:{} failed: {e}",
-                    self.endpoint.host, self.endpoint.port
-                ),
-            })?;
+        let stream =
+            tokio::time::timeout(self.client_config.connect_timeout, TcpStream::connect(addr))
+                .await
+                .map_err(|_| ClientError::Timeout)?
+                .map_err(|e| ClientError::Connection {
+                    message: format!(
+                        "connect to {}:{} failed: {e}",
+                        self.endpoint.host, self.endpoint.port
+                    ),
+                })?;
         stream
             .set_nodelay(true)
             .map_err(|e| ClientError::Connection {
@@ -484,8 +498,8 @@ impl Client {
         let reader_task = tokio::spawn(reader_loop(
             BufReader::new(read_half),
             Arc::clone(&shared),
-            self.profile.max_frame_bytes,
-            self.profile.push,
+            self.config.max_frame_bytes,
+            self.config.push,
             Arc::clone(&self.push_handler),
             Arc::clone(&self.unknown_drops),
         ));
@@ -512,13 +526,13 @@ impl Client {
     /// (`auth_required` / `require_auth` off). Enforcement is the server's
     /// policy, not the profile's.
     async fn handshake(&self, conn: &Arc<Conn>) -> Result<HandshakeInfo, ClientError> {
-        match self.profile.handshake {
+        match self.config.handshake {
             Handshake::None => Ok(HandshakeInfo::default()),
             Handshake::AuthCommand => {
-                let Some(credentials) = self.config.credentials.clone() else {
+                let Some(credentials) = self.client_config.credentials.clone() else {
                     return Ok(HandshakeInfo::default());
                 };
-                if self.profile.hello_style == HelloStyle::ArgLess {
+                if self.config.hello_style == HelloStyle::ArgLess {
                     // Optional metadata HELLO — takes no arguments; the
                     // reply carries {server, version, proto, id,
                     // authenticated}. Credentials go in AUTH below.
@@ -539,7 +553,7 @@ impl Client {
             }
             Handshake::HelloMandatory => {
                 let mut pairs = vec![(Value::Str("version".to_owned()), Value::Int(1))];
-                match &self.config.credentials {
+                match &self.client_config.credentials {
                     Some(Credentials::Token(token)) => {
                         pairs.push((Value::Str("token".to_owned()), Value::Str(token.clone())));
                     }
@@ -559,7 +573,7 @@ impl Client {
                     None => {}
                 }
                 let name = self
-                    .config
+                    .client_config
                     .client_name
                     .clone()
                     .unwrap_or_else(|| "thunder-client".to_owned());
@@ -595,7 +609,7 @@ impl Client {
         command: &str,
         args: Vec<Value>,
     ) -> Result<Value, ClientError> {
-        self.dispatch(conn, command, args, self.config.call_timeout)
+        self.dispatch(conn, command, args, self.client_config.call_timeout)
             .await
             .map_err(|e| match e.into_error() {
                 ClientError::Server { message, .. } | ClientError::Auth { message } => {
@@ -662,7 +676,7 @@ impl Client {
                 Ok(value) => Ok(value),
                 Err(message) => Err(DispatchError::Fatal(ClientError::from_server_message(
                     message,
-                    self.profile.error_codes,
+                    self.config.error_codes,
                 ))),
             },
         }
@@ -672,7 +686,7 @@ impl Client {
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Client")
-            .field("scheme", &self.profile.scheme)
+            .field("scheme", &self.config.scheme)
             .field("endpoint", &self.endpoint)
             .field("closed", &self.closed.load(Ordering::Relaxed))
             .finish_non_exhaustive()

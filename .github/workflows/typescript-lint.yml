@@ -49,12 +49,6 @@ jobs:
       # working-directory: ./subdirectory
       run: npm run lint  # For pnpm: pnpm run lint | For yarn: yarn lint
     
-    - name: Check code formatting
-      # MONOREPO: Add working-directory if in subdirectory
-      # working-directory: ./subdirectory
-      run: npm run format -- --check || echo "Format check skipped"
-      continue-on-error: true  # Don't fail if format check not configured
-    
     - name: Security audit
       run: |
         echo "Running security audit..."

@@ -16,6 +16,10 @@ jobs:
       run:
         working-directory: rust
     strategy:
+      # Without this, one OS failing cancels the other two and hides whether
+      # the failure is platform-specific — which is the only reason to run a
+      # 3-OS matrix at all.
+      fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
@@ -53,9 +57,11 @@ jobs:
       run: cargo build --tests --workspace
     
     - name: Run tests
-      # MONOREPO: Add working-directory if in subdirectory
-      # working-directory: ./subdirectory
-      run: cargo nextest run --workspace || cargo test --workspace
+      # No `|| cargo test` fallback: the template's intent was to cover a
+      # missing nextest, but `||` also fires when nextest RUNS and a test
+      # FAILS, silently re-running the suite — an accidental retry that greens
+      # a flake. nextest is installed by the step above, so it is never missing.
+      run: cargo nextest run --workspace
     
     - name: Upload test report
       uses: actions/upload-artifact@v4
@@ -65,14 +71,14 @@ jobs:
         path: target/nextest/default/junit.xml
         if-no-files-found: ignore
     
-    - name: Security audit (optional)
-      # MONOREPO: Add working-directory if in subdirectory
-      # working-directory: ./subdirectory
+    - name: Security audit
+      # Was a step that only echoed "audit skipped" and could not fail — a
+      # green check for work never done. Now it actually audits. Runs on Linux
+      # only: the advisory DB is platform-independent, so auditing three times
+      # buys nothing but minutes. A `run:` step (not `uses:`) so the job's
+      # `working-directory: rust` applies — the workspace is not at the root.
+      if: runner.os == 'Linux'
       run: |
-        echo "Security audit skipped (cargo-audit not pre-installed)"
-        echo "To enable: Install cargo-audit in a separate workflow step"
-        echo "  - cargo install cargo-audit --locked"
-        echo "  - cargo audit"
-      continue-on-error: true
-      shell: bash
+        cargo install cargo-audit --locked
+        cargo audit
 

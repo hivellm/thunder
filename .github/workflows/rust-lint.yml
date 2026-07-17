@@ -17,11 +17,10 @@ jobs:
         working-directory: rust
 
     steps:
-    - name: Install minimal nightly (for fmt)
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rustfmt
-    
+    # The nightly toolchain this template installed "for fmt" was overridden by
+    # stable on the next step and never used — line 41 says as much ("nightly
+    # not required for edition 2024"). Dropped: it downloaded a toolchain to
+    # throw it away.
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
       with:

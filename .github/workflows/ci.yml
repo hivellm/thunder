@@ -1,5 +1,15 @@
 name: CI
 
+# The authoritative PKG-002 matrix. Each lane runs the family quality gate in
+# order — type-check -> lint -> tests — as sequential steps, so a lint failure
+# stops the lane before tests run. That ordering is the requirement; splitting
+# lint and test into parallel jobs would satisfy the letter and lose the point.
+#
+# Every lane ends with an explicit corpus step (TST-020/021). The corpus tests
+# already run inside each suite, but a named step is what makes the coverage
+# checkable at a glance instead of asserted in a comment — and it fails loudly
+# if the vectors ever stop being loaded.
+
 on:
   push:
     branches: [main]
@@ -25,11 +35,13 @@ jobs:
         run: cargo fmt --all --check
       - name: Lint
         run: cargo clippy --workspace --all-features -- -D warnings
-      - name: Test (includes the conformance corpus — TST-020/021)
+      - name: Test
         run: cargo test --workspace --all-features
+      - name: Conformance corpus (TST-020/021)
+        run: cargo test -p thunder --test corpus --test cross_decode
 
   typescript:
-    name: typescript (skeleton)
+    name: typescript
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,21 +51,41 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
-      - run: npm run typecheck
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      # `npm ci` honours the lockfile; `npm install` would resolve fresh and
+      # could green a build the lockfile cannot reproduce.
+      - run: npm ci
+      - name: Type-check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Conformance corpus (TST-020/021)
+        run: npx vitest run tests/corpus.test.ts
 
   python:
     name: python
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install ./python
-      - name: Import check
-        run: python -c "import thunder_rpc; assert thunder_rpc.WIRE_VERSION == 1"
+        run: pip install -e ".[dev]"
+      # Scoped to python/ so the package's own ruff config (pyproject.toml)
+      # applies. The repo-root lint in python-lint.yml runs unconfigured.
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest
+      - name: Conformance corpus (TST-020/021)
+        run: pytest tests/test_corpus.py
 
   csharp:
     name: csharp
@@ -66,7 +98,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      # -warnaserror is the C# lane's type-check and lint in one step.
       - name: Build
         run: dotnet build -warnaserror
-      - name: Test (includes the conformance corpus — TST-020/021)
+      - name: Test
         run: dotnet test --no-build
+      - name: Conformance corpus (TST-020/021)
+        run: dotnet test --no-build --filter "FullyQualifiedName~CorpusTests"

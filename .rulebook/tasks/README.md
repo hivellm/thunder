@@ -16,9 +16,9 @@
 | Status | Task | Progress | Description |
 |--------|------|----------|-------------|
 | ⬚ | phase4_behavioral-floor | 0/14 | behavioral floor |
-| ⬚ | phase4_hotpath-optimization | 0/5 | hotpath optimization |
+| ⬚ | phase4_hotpath-optimization | 0/11 | hotpath optimization |
 | ⬚ | phase4_product-harness | 0/10 | product harness |
-| 🔄 | phase4_shootout | 0/14 | shootout |
+| 🔄 | phase4_shootout | 9/13 | shootout |
 
 ## phase5
 
@@ -31,9 +31,9 @@
 
 | Status | Task | Progress | Description |
 |--------|------|----------|-------------|
-| ⬚ | phase6_agnostic-config | 12/13 | agnostic config |
 | ⬚ | phase6_canonical-behavior-spec | 0/11 | canonical behavior spec |
 | ⬚ | phase6_cheap-convergence | 0/9 | cheap convergence |
+| ⬚ | phase6_client-pool | 0/11 | client pool |
 | ⬚ | phase6_handshake-optional | 0/11 | handshake optional |
 | ⬚ | phase6_tls-optional | 0/10 | tls optional |
 

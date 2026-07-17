@@ -9,6 +9,13 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    # Scoped to python/ so the package's own ruff config applies (line-length
+    # 100, python/pyproject.toml). At the repo root there is no ruff/black
+    # config at all, so this lane silently linted the whole repo under default
+    # rules — passing or failing for reasons the package never configured.
+    defaults:
+      run:
+        working-directory: python
 
     steps:
     - uses: actions/checkout@v5
@@ -27,7 +34,7 @@ jobs:
       # working-directory: ./subdirectory
       run: |
         python -m pip install --upgrade pip
-        pip install ruff mypy black
+        pip install ruff black
     
     - name: Check code formatting with black
       # MONOREPO: Add working-directory if in subdirectory
@@ -39,9 +46,10 @@ jobs:
       # working-directory: ./subdirectory
       run: ruff check .
     
-    - name: Run mypy type checker
-      # MONOREPO: Add working-directory if in subdirectory
-      # working-directory: ./subdirectory
-      run: mypy . || echo "Type checking optional"
-      continue-on-error: true
+    # The mypy step here was `mypy . || echo "Type checking optional"` AND
+    # `continue-on-error: true` — neutered twice over, so it could never fail
+    # and reported success either way. Removed rather than left as a green
+    # check for work not done. PKG-002 asks for `ruff + pytest` on the Python
+    # lane, both of which run for real. If mypy is wanted later it has to land
+    # as an actual gate, with the annotations to back it.
 

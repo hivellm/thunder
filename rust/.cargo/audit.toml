@@ -1,0 +1,23 @@
+# cargo-audit configuration (read by the CI "Security audit" step, which runs
+# `cargo audit` from working-directory: rust).
+#
+# The audit fails the build on any advisory — that is deliberate (see the step
+# comment in .github/workflows/rust-test.yml). Entries here are the narrow,
+# justified exceptions, each of which MUST name why it is safe and why it has
+# no upgrade path. Do not add to this list to silence a real, fixable finding.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0189 — DNS rebinding in rmcp's Streamable HTTP server
+    # transport (severity 8.8). Reached only as a transitive DEV-dependency:
+    #   rmcp 0.8.5 → nexus-protocol 2.5.0 [dev-dependency] → thunder-rpc
+    # nexus-protocol is used solely by tests/cross_decode.rs (TST-030) for its
+    # `rpc` byte-encoding module; Thunder never constructs rmcp's HTTP server
+    # transport, and dev-dependencies are not part of any published crate, so
+    # the vulnerable surface is never present in a Thunder artifact. No upgrade
+    # path: nexus-protocol 2.5.0 is the latest published version, it pins
+    # rmcp 0.8.x unconditionally (no feature gate to drop it), and the fix
+    # (rmcp >= 1.4.0) is a major bump it does not accept. Re-evaluate when a
+    # newer nexus-protocol ships.
+    "RUSTSEC-2026-0189",
+]

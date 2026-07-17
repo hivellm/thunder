@@ -3,12 +3,26 @@ namespace HiveLLM.Thunder;
 /// <summary>Handshake style (PRO-001).</summary>
 public enum Handshake
 {
-    /// <summary>No RPC-layer auth (Synap v1 legacy).</summary>
+    /// <summary>
+    /// No RPC-layer handshake at all: the connection is usable immediately.
+    /// <para>
+    /// No registered family profile uses this. It was the mistaken reading of
+    /// Synap, whose RPC path <em>does</em> authenticate (<c>AUTH</c> handler
+    /// behind its <c>require_auth</c> toggle) — see the BN-023 errata. It
+    /// stays available for custom profiles (PRO-020).
+    /// </para>
+    /// </summary>
     None,
 
     /// <summary>
     /// <c>HELLO</c> optional; <c>AUTH [api_key]</c> or <c>[user, pass]</c>;
-    /// pre-auth allowlist <c>PING/HELLO/AUTH/QUIT</c> (Nexus).
+    /// pre-auth allowlist <c>PING/HELLO/AUTH/QUIT</c> (Nexus, Synap).
+    /// <para>
+    /// Whether a deployment <em>enforces</em> credentials is its own config
+    /// (<c>auth_required</c> / <c>require_auth</c>), not a protocol dialect: a
+    /// client with no credentials configured simply sends no <c>AUTH</c>,
+    /// which is correct against an open deployment.
+    /// </para>
     /// </summary>
     AuthCommand,
 
@@ -22,11 +36,18 @@ public enum Handshake
 /// <summary>HELLO payload style (PRO-001).</summary>
 public enum HelloStyle
 {
-    /// <summary>No HELLO in the profile (Synap).</summary>
+    /// <summary>
+    /// The profile has no <c>HELLO</c> command (Synap: its RPC path ships an
+    /// <c>AUTH</c> handler but no <c>HELLO</c> handler at all).
+    /// </summary>
     NotUsed,
 
-    /// <summary>Positional <c>[Int(version)]</c> (Nexus).</summary>
-    PositionalVersion,
+    /// <summary>
+    /// <c>HELLO</c> with <b>no arguments</b>; the reply is a metadata Map
+    /// <c>{server, version, proto, id, authenticated}</c> (Nexus).
+    /// Credentials travel via <c>AUTH</c>, never inside the HELLO.
+    /// </summary>
+    ArgLess,
 
     /// <summary>
     /// Map with <c>version</c>, <c>token</c> | <c>api_key</c>,
@@ -116,15 +137,25 @@ public sealed record Profile
     public required TlsPolicy Tls { get; init; }
 
     /// <summary>
-    /// Synap — protocol origin. No RPC-layer auth, push enabled, 512 MiB cap
-    /// (matches <c>synap-protocol</c>'s <c>MAX_FRAME_SIZE</c>).
+    /// Synap — protocol origin. <c>AUTH</c>-command auth with <b>no HELLO</b>,
+    /// push enabled, 512 MiB cap (matches <c>synap-protocol</c>'s
+    /// <c>MAX_FRAME_SIZE</c>).
+    /// <para>
+    /// Its RPC listener authenticates inline in the read loop (<c>AUTH</c> →
+    /// shared <c>UserManager</c>, <c>NOAUTH</c> gate, <c>NOPERM</c> admin ACL)
+    /// behind the <c>require_auth</c> config toggle; it simply has no
+    /// <c>HELLO</c> handler. The registry previously said
+    /// <c>handshake: none</c>, which described only the
+    /// <c>require_auth = false</c> posture and left this profile unable to
+    /// authenticate at all (BN-023 errata).
+    /// </para>
     /// </summary>
     public static Profile Synap { get; } = new()
     {
         Name = "synap",
         Scheme = "synap",
         DefaultPort = 15501,
-        Handshake = Handshake.None,
+        Handshake = Handshake.AuthCommand,
         HelloStyle = HelloStyle.NotUsed,
         Push = PushPolicy.Enabled,
         MaxFrameBytes = 512 * 1024 * 1024,
@@ -133,14 +164,22 @@ public sealed record Profile
         Tls = TlsPolicy.Off,
     };
 
-    /// <summary>Nexus — canonical spec author. Optional HELLO + AUTH, 64 MiB cap.</summary>
+    /// <summary>
+    /// Nexus — canonical spec author. Optional arg-less HELLO + AUTH,
+    /// 64 MiB cap.
+    /// <para>
+    /// Its RPC <c>HELLO</c> takes no arguments and answers with a metadata
+    /// Map; the positional <c>[Int(1)]</c> the registry used to claim is the
+    /// <em>RESP3</em> HELLO, a different surface (BN-023 errata).
+    /// </para>
+    /// </summary>
     public static Profile Nexus { get; } = new()
     {
         Name = "nexus",
         Scheme = "nexus",
         DefaultPort = 15475,
         Handshake = Handshake.AuthCommand,
-        HelloStyle = HelloStyle.PositionalVersion,
+        HelloStyle = HelloStyle.ArgLess,
         Push = PushPolicy.Reserved,
         MaxFrameBytes = Wire.DefaultMaxFrameBytes,
         MaxInFlight = 1024,
@@ -148,7 +187,15 @@ public sealed record Profile
         Tls = TlsPolicy.Off,
     };
 
-    /// <summary>Vectorizer — HELLO-mandatory with credentials, <c>[code]</c> prefixes.</summary>
+    /// <summary>
+    /// Vectorizer — HELLO-mandatory with credentials, <c>[code]</c> prefixes.
+    /// <para>
+    /// TLS is described in its RPC spec but never wired — its <c>RpcConfig</c>
+    /// exposes no cert/key keys and the listener binds plain TCP — so the
+    /// profile records the capability as reserved, not optional (BN-023
+    /// errata). No family product runs RPC TLS today.
+    /// </para>
+    /// </summary>
     public static Profile Vectorizer { get; } = new()
     {
         Name = "vectorizer",
@@ -160,7 +207,7 @@ public sealed record Profile
         MaxFrameBytes = Wire.DefaultMaxFrameBytes,
         MaxInFlight = 256,
         ErrorCodes = ErrorConvention.BracketCode,
-        Tls = TlsPolicy.Optional,
+        Tls = TlsPolicy.Reserved,
     };
 
     /// <summary>Lexum — Vectorizer-style handshake, both error conventions.</summary>

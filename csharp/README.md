@@ -47,8 +47,8 @@ Custom profiles are plain `new Profile { … }` constructions.
 
 | Profile | Endpoint scheme | Default port | Handshake | Push | Error convention |
 |---|---|---|---|---|---|
-| `Profile.Synap` | `synap://` | 15501 | none | enabled | RESP3 prefixes |
-| `Profile.Nexus` | `nexus://` | 15475 | optional `HELLO` + `AUTH` | reserved | RESP3 prefixes |
+| `Profile.Synap` | `synap://` | 15501 | `AUTH` (no `HELLO`) | enabled | RESP3 prefixes |
+| `Profile.Nexus` | `nexus://` | 15475 | optional arg-less `HELLO` + `AUTH` | reserved | RESP3 prefixes |
 | `Profile.Vectorizer` | `vectorizer://` | 15503 | mandatory `HELLO` map | reserved | `[code] message` |
 | `Profile.Lexum` | `lexum://` | 17001 | mandatory `HELLO` map | reserved | both |
 

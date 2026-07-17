@@ -24,7 +24,7 @@ mod metrics;
 mod session;
 
 pub use dispatch::{AuthError, Credentials, Dispatch, Principal};
-pub use errors::{format_bracket_code, format_err, NOAUTH, WRONGPASS};
+pub use errors::{format_bracket_code, format_err, NOAUTH, NOPERM, WRONGPASS};
 pub use listener::{spawn_listener, ListenerConfig, ListenerHandle, ServerInfo};
 pub use metrics::MetricsSnapshot;
 pub use session::{PushClosed, PushSender, Session};

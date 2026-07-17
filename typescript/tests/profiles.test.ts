@@ -52,7 +52,7 @@ function mapHelloStyle(raw: string | null): HelloStyle {
   switch (raw) {
     case null:
       return "not_used";
-    case "positional_version":
+    case "arg_less":
     case "map_payload":
       return raw;
     default:

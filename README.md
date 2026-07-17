@@ -106,10 +106,15 @@ Product differences are **data, not forks** — six dimensions (handshake, hello
 
 | Profile | RPC port | Handshake | Error convention | Push |
 |---|---|---|---|---|
-| `Profile::synap()` | 15501 | none (v1 legacy) | `ERR` prefix | ✅ `SUBSCRIBE`, id `u32::MAX` |
-| `Profile::nexus()` | 15475 | `HELLO` optional + `AUTH` | RESP3-style prefixes (`ERR`/`NOAUTH`/`WRONGPASS`) | reserved |
+| `Profile::synap()` | 15501 | `AUTH` (no `HELLO` — its RPC path has no HELLO handler) | RESP3-style prefixes (`ERR`/`NOAUTH`/`WRONGPASS`/`NOPERM`) | ✅ `SUBSCRIBE`, id `u32::MAX` |
+| `Profile::nexus()` | 15475 | arg-less `HELLO` optional + `AUTH` | RESP3-style prefixes (`ERR`/`NOAUTH`/`WRONGPASS`) | reserved |
 | `Profile::vectorizer()` | 15503 | `HELLO` mandatory (JWT / api-key / client_name) | `"[code] message"` prefix | reserved |
 | `Profile::lexum()` *(planned)* | 17001 | Vectorizer-style | `"[code] "` + auth prefixes | reserved |
+
+A profile fixes the handshake **shape**, never the auth **policy**: whether a deployment demands
+credentials is its own config (Nexus `auth_required`, Synap `require_auth` — mirrored by Thunder's
+`ListenerConfig::auth_required`). A client with no credentials configured simply sends no `AUTH`,
+which is exactly right against an open deployment.
 
 Custom `Profile { … }` construction stays public — new products are never blocked on a Thunder release.
 

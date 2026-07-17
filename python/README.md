@@ -50,8 +50,8 @@ Profiles are data, not behavior (SPEC-002) — constants pinned to
 
 | Profile | Endpoint scheme | Port | Handshake | Push | Error convention |
 |---|---|---|---|---|---|
-| `Profiles.synap` | `synap://` | 15501 | none | enabled | RESP3 prefixes |
-| `Profiles.nexus` | `nexus://` | 15475 | `HELLO` optional + `AUTH` | reserved | RESP3 prefixes |
+| `Profiles.synap` | `synap://` | 15501 | `AUTH` (no `HELLO`) | enabled | RESP3 prefixes |
+| `Profiles.nexus` | `nexus://` | 15475 | arg-less `HELLO` optional + `AUTH` | reserved | RESP3 prefixes |
 | `Profiles.vectorizer` | `vectorizer://` | 15503 | `HELLO` mandatory | reserved | `[code] message` |
 | `Profiles.lexum` | `lexum://` | 17001 | `HELLO` mandatory | reserved | both |
 

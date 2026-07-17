@@ -2,9 +2,13 @@ name: nexus
 scheme: nexus
 default_port: 15475
 handshake: auth_command    # HELLO optional; AUTH [api_key] | [user, pass]; pre-auth allowlist PING/HELLO/AUTH/QUIT
-hello_style: positional_version
+# BN-023 errata: was `positional_version`. The RPC HELLO takes NO arguments and
+# returns a metadata Map {server, version, proto, id, authenticated}
+# (nexus-server/src/protocol/rpc/dispatch/admin.rs:54-77). The positional
+# [Int(1)] protover belongs to the RESP3 HELLO, a different surface.
+hello_style: arg_less
 push: reserved
 max_frame_bytes: 67108864  # 64 MiB, operator-configurable (rpc.max_frame_bytes)
 max_in_flight: 1024
-error_codes: resp3_prefixes
-tls: off
+error_codes: resp3_prefixes # ERR / NOAUTH / WRONGPASS (NOPROTO never fires on the RPC path)
+tls: "off"                 # quoted: YAML 1.1 loaders coerce bare off -> false

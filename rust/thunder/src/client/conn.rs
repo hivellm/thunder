@@ -502,9 +502,15 @@ impl Client {
     }
 
     /// Run the profile handshake before user calls proceed (CLT-002):
-    /// `None` sends nothing; `AuthCommand` sends optional `HELLO` then
-    /// `AUTH` when credentials are configured; `HelloMandatory` sends the
-    /// `HELLO` map as the first frame and parses the reply.
+    /// `None` sends nothing; `AuthCommand` sends the optional arg-less
+    /// `HELLO` (when the profile has one) then `AUTH` when credentials are
+    /// configured; `HelloMandatory` sends the `HELLO` map as the first frame
+    /// and parses the reply.
+    ///
+    /// Under `AuthCommand`, no credentials means no `AUTH` frame — which is
+    /// the correct behavior against a deployment that does not require them
+    /// (`auth_required` / `require_auth` off). Enforcement is the server's
+    /// policy, not the profile's.
     async fn handshake(&self, conn: &Arc<Conn>) -> Result<HandshakeInfo, ClientError> {
         match self.profile.handshake {
             Handshake::None => Ok(HandshakeInfo::default()),
@@ -512,10 +518,11 @@ impl Client {
                 let Some(credentials) = self.config.credentials.clone() else {
                     return Ok(HandshakeInfo::default());
                 };
-                if self.profile.hello_style == HelloStyle::PositionalVersion {
-                    // Optional HELLO announcing the protocol version.
-                    self.handshake_call(conn, "HELLO", vec![Value::Int(1)])
-                        .await?;
+                if self.profile.hello_style == HelloStyle::ArgLess {
+                    // Optional metadata HELLO — takes no arguments; the
+                    // reply carries {server, version, proto, id,
+                    // authenticated}. Credentials go in AUTH below.
+                    self.handshake_call(conn, "HELLO", Vec::new()).await?;
                 }
                 let args = match credentials {
                     Credentials::Token(token) => vec![Value::Str(token)],

@@ -126,8 +126,61 @@ def test_none_handshake_sends_nothing_before_user_calls() -> None:
         conn.send_ok(request.id, Value.str("PONG"))
 
     with MockServer(script) as srv:
+        # `plain_profile()` is the genuine Handshake.NONE case. (This test used
+        # to ride on SYNAP, which is AUTH_COMMAND since BN-023.)
+        client = Client.connect(srv.address, plain_profile())
+        assert not client.is_authenticated()
+        assert client.call("PING").as_str() == "PONG"
+        client.close()
+
+
+def test_synap_profile_without_credentials_sends_nothing() -> None:
+    """The client half of the shape/policy split, on the profile BN-023
+    changed: ``synap`` is ``AUTH_COMMAND`` now, but with no credentials
+    configured it sends no ``AUTH`` at all — exactly right against an open
+    deployment (``require_auth`` off). It must also never send ``HELLO``
+    (``HelloStyle.NOT_USED``)."""
+
+    def script(srv: MockServer) -> None:
+        conn = srv.accept()
+        request = conn.read_request()
+        assert request.command == "PING", "no AUTH/HELLO frame without credentials"
+        conn.send_ok(request.id, Value.str("PONG"))
+
+    with MockServer(script) as srv:
         client = Client.connect(srv.address, SYNAP)
         assert not client.is_authenticated()
+        assert client.call("PING").as_str() == "PONG"
+        client.close()
+
+
+def test_synap_profile_sends_auth_and_never_hello() -> None:
+    """BN-023 regression: the ``synap`` profile must be able to authenticate.
+
+    It used to be ``Handshake.NONE``, so a credentialed client sent
+    **nothing** and could never reach a ``require_auth`` Synap. Synap's RPC
+    path has an ``AUTH`` handler (and no ``HELLO`` handler), so the profile is
+    ``AUTH_COMMAND`` + ``HelloStyle.NOT_USED``: ``AUTH`` goes out, ``HELLO``
+    never does."""
+
+    def script(srv: MockServer) -> None:
+        conn = srv.accept()
+        # First frame must be AUTH — Synap has no HELLO handler at all.
+        auth = conn.read_request()
+        assert auth.command == "AUTH", "first frame must be AUTH, not HELLO"
+        assert auth.args == (
+            Value.str("root"),
+            Value.str("hunter2"),
+        ), "Synap's AUTH <user> <password> form"
+        conn.send_ok(auth.id, Value.str("OK"))
+        ping = conn.read_request()
+        assert ping.command == "PING"
+        conn.send_ok(ping.id, Value.str("PONG"))
+
+    with MockServer(script) as srv:
+        config = ClientConfig(credentials=Credentials.user_pass("root", "hunter2"))
+        client = Client.connect(srv.address, SYNAP, config)
+        assert client.is_authenticated()
         assert client.call("PING").as_str() == "PONG"
         client.close()
 
@@ -137,7 +190,10 @@ def test_auth_command_handshake_sends_hello_then_auth_api_key() -> None:
         conn = srv.accept()
         hello = conn.read_request()
         assert hello.command == "HELLO"
-        assert hello.args == (Value.int(1),), "positional [Int(1)]"
+        assert hello.args == (), (
+            "Nexus RPC HELLO takes no arguments — the positional [Int(1)] is "
+            "the RESP3 HELLO, a different surface (BN-023 errata)"
+        )
         conn.send_ok(hello.id, Value.null())
         auth = conn.read_request()
         assert auth.command == "AUTH"

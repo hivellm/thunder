@@ -151,6 +151,32 @@ async fn none_handshake_sends_nothing_before_user_calls() {
         send_ok(&mut w, req.id, Value::Str("PONG".to_owned())).await;
     });
 
+    // `plain_profile()` is the genuine Handshake::None case. (This test used
+    // to ride on Profile::synap(), which is `AuthCommand` since BN-023.)
+    let client = Client::connect(&addr, plain_profile()).await.unwrap();
+    assert!(!client.is_authenticated());
+    let pong = client.call("PING", vec![]).await.unwrap();
+    assert_eq!(pong.as_str(), Some("PONG"));
+    server.await.unwrap();
+}
+
+/// The client half of the shape/policy split, on the profile BN-023 changed:
+/// `synap` is `AuthCommand` now, but with no credentials configured it sends
+/// no `AUTH` at all — exactly right against an open deployment
+/// (`require_auth` off). It must also never send `HELLO` (`HelloStyle::NotUsed`).
+#[tokio::test]
+async fn synap_profile_without_credentials_sends_nothing() {
+    let (listener, addr) = listener().await;
+    let server = tokio::spawn(async move {
+        let (mut r, mut w) = accept_split(&listener).await;
+        let req = read_req(&mut r).await;
+        assert_eq!(
+            req.command, "PING",
+            "no AUTH/HELLO frame without credentials"
+        );
+        send_ok(&mut w, req.id, Value::Str("PONG".to_owned())).await;
+    });
+
     let client = Client::connect(&addr, Profile::synap()).await.unwrap();
     assert!(!client.is_authenticated());
     let pong = client.call("PING", vec![]).await.unwrap();
@@ -165,7 +191,12 @@ async fn auth_command_handshake_sends_hello_then_auth_api_key() {
         let (mut r, mut w) = accept_split(&listener).await;
         let hello = read_req(&mut r).await;
         assert_eq!(hello.command, "HELLO");
-        assert_eq!(hello.args, vec![Value::Int(1)], "positional [Int(1)]");
+        assert_eq!(
+            hello.args,
+            Vec::<Value>::new(),
+            "Nexus RPC HELLO takes no arguments — the positional [Int(1)] is \
+             the RESP3 HELLO, a different surface (BN-023 errata)"
+        );
         send_ok(&mut w, hello.id, Value::Null).await;
         let auth = read_req(&mut r).await;
         assert_eq!(auth.command, "AUTH");
@@ -178,6 +209,44 @@ async fn auth_command_handshake_sends_hello_then_auth_api_key() {
 
     let config = ClientConfig::new().api_key("k-123");
     let client = Client::connect_with(&addr, Profile::nexus(), config)
+        .await
+        .unwrap();
+    assert!(client.is_authenticated());
+    let pong = client.call("PING", vec![]).await.unwrap();
+    assert_eq!(pong.as_str(), Some("PONG"));
+    server.await.unwrap();
+}
+
+/// BN-023 regression: the `synap` profile must be able to authenticate.
+///
+/// It used to be `Handshake::None`, so a credentialed client sent **nothing**
+/// and could never reach a `require_auth` Synap. Synap's RPC path has an `AUTH`
+/// handler (and no `HELLO` handler), so the profile is `AuthCommand` +
+/// `HelloStyle::NotUsed`: `AUTH` goes out, `HELLO` never does.
+#[tokio::test]
+async fn synap_profile_sends_auth_and_never_hello() {
+    let (listener, addr) = listener().await;
+    let server = tokio::spawn(async move {
+        let (mut r, mut w) = accept_split(&listener).await;
+        // First frame must be AUTH — Synap has no HELLO handler at all.
+        let auth = read_req(&mut r).await;
+        assert_eq!(auth.command, "AUTH", "first frame must be AUTH, not HELLO");
+        assert_eq!(
+            auth.args,
+            vec![
+                Value::Str("root".to_owned()),
+                Value::Str("hunter2".to_owned())
+            ],
+            "Synap's AUTH <user> <password> form"
+        );
+        send_ok(&mut w, auth.id, Value::Str("OK".to_owned())).await;
+        let ping = read_req(&mut r).await;
+        assert_eq!(ping.command, "PING");
+        send_ok(&mut w, ping.id, Value::Str("PONG".to_owned())).await;
+    });
+
+    let config = ClientConfig::new().user_pass("root", "hunter2");
+    let client = Client::connect_with(&addr, Profile::synap(), config)
         .await
         .unwrap();
     assert!(client.is_authenticated());

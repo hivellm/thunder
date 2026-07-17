@@ -456,10 +456,17 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     /// <summary>
     /// Run the profile handshake before user calls proceed (CLT-002):
     /// <see cref="Handshake.None"/> sends nothing;
-    /// <see cref="Handshake.AuthCommand"/> sends optional <c>HELLO</c> then
-    /// <c>AUTH</c> when credentials are configured;
+    /// <see cref="Handshake.AuthCommand"/> sends the optional arg-less
+    /// <c>HELLO</c> (when the profile has one) then <c>AUTH</c> when
+    /// credentials are configured;
     /// <see cref="Handshake.HelloMandatory"/> sends the <c>HELLO</c> map as
     /// the first frame and parses the reply.
+    /// <para>
+    /// Under <see cref="Handshake.AuthCommand"/>, no credentials means no
+    /// <c>AUTH</c> frame — which is the correct behavior against a deployment
+    /// that does not require them (<c>auth_required</c> / <c>require_auth</c>
+    /// off). Enforcement is the server's policy, not the profile's.
+    /// </para>
     /// </summary>
     private async Task<HandshakeInfo> HandshakeAsync(Conn conn, CancellationToken cancellationToken)
     {
@@ -476,11 +483,13 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
                     return HandshakeInfo.Default;
                 }
 
-                if (_profile.HelloStyle == HelloStyle.PositionalVersion)
+                if (_profile.HelloStyle == HelloStyle.ArgLess)
                 {
-                    // Optional HELLO announcing the protocol version.
+                    // Optional metadata HELLO — takes no arguments; the reply
+                    // carries {server, version, proto, id, authenticated}.
+                    // Credentials go in AUTH below.
                     await HandshakeCallAsync(
-                            conn, "HELLO", new[] { Value.Int(Wire.WireVersion) }, cancellationToken)
+                            conn, "HELLO", System.Array.Empty<Value>(), cancellationToken)
                         .ConfigureAwait(false);
                 }
 

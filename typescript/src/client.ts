@@ -528,9 +528,15 @@ export class Client {
 
   /**
    * Run the profile handshake before user calls proceed (CLT-002):
-   * `none` sends nothing; `auth_command` sends optional `HELLO` then
-   * `AUTH` when credentials are configured; `hello_mandatory` sends the
-   * `HELLO` map as the first frame and parses the reply.
+   * `none` sends nothing; `auth_command` sends the optional arg-less
+   * `HELLO` (when the profile has one) then `AUTH` when credentials are
+   * configured; `hello_mandatory` sends the `HELLO` map as the first frame
+   * and parses the reply.
+   *
+   * Under `auth_command`, no credentials means no `AUTH` frame — which is
+   * the correct behavior against a deployment that does not require them
+   * (`auth_required` / `require_auth` off). Enforcement is the server's
+   * policy, not the profile's.
    */
   async #handshake(conn: Conn): Promise<HandshakeInfo> {
     switch (this.#profile.handshake) {
@@ -539,9 +545,11 @@ export class Client {
       case "auth_command": {
         const credentials = this.#credentials;
         if (!credentials) return { authenticated: false, capabilities: [] };
-        if (this.#profile.helloStyle === "positional_version") {
-          // Optional HELLO announcing the protocol version.
-          await this.#handshakeCall(conn, "HELLO", [Value.int(1)]);
+        if (this.#profile.helloStyle === "arg_less") {
+          // Optional metadata HELLO — takes no arguments; the reply carries
+          // {server, version, proto, id, authenticated}. Credentials go in
+          // AUTH below.
+          await this.#handshakeCall(conn, "HELLO", []);
         }
         const args =
           credentials.type === "token"

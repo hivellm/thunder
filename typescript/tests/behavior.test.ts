@@ -18,6 +18,7 @@ import {
   FrameReader,
   FrameTooLargeError,
   PUSH_ID,
+  Profiles,
   Response,
   ServerError,
   ThunderError,
@@ -244,7 +245,9 @@ test("a stray response id is dropped, never fatal (CLT-013)", async () => {
 
 test("the none handshake sends nothing before user calls", async () => {
   const server = await startServer();
-  const client = await connect(server, Profiles_synapLike());
+  // `plainProfile()` is the genuine `none` case (PRO-020). This test used to
+  // ride on the synap profile shape, which is `auth_command` since BN-023.
+  const client = await connect(server, plainProfile({ push: "enabled", errorCodes: "resp3_prefixes" }));
   expect(client.isAuthenticated).toBe(false);
 
   const pong = client.call("PING");
@@ -256,14 +259,64 @@ test("the none handshake sends nothing before user calls", async () => {
   expect(Value.asStr(await pong)).toBe("PONG");
 });
 
-/** The synap profile shape without its 512 MiB cap (needless here). */
-function Profiles_synapLike(): Profile {
-  return plainProfile({ handshake: "none", push: "enabled", errorCodes: "resp3_prefixes" });
-}
+/**
+ * The client half of the shape/policy split, on the profile BN-023 changed:
+ * `synap` is `auth_command` now, but with no credentials configured it sends
+ * no `AUTH` at all — exactly right against an open deployment (`require_auth`
+ * off). It must also never send `HELLO` (`helloStyle: "not_used"`).
+ */
+test("the synap profile without credentials sends nothing", async () => {
+  const server = await startServer();
+  const client = await connect(server, Profiles.synap);
+  expect(client.isAuthenticated).toBe(false);
+
+  const pong = client.call("PING");
+  const conn = await server.nextConn();
+  const request = await conn.nextRequest();
+  expect(request.command, "no AUTH/HELLO frame without credentials").toBe("PING");
+  conn.sendOk(request.id, Value.str("PONG"));
+  expect(Value.asStr(await pong)).toBe("PONG");
+});
+
+/**
+ * BN-023 regression: the `synap` profile must be able to authenticate.
+ *
+ * It used to be `handshake: "none"`, so a credentialed client sent **nothing**
+ * and could never reach a `require_auth` Synap. Synap's RPC path has an `AUTH`
+ * handler (and no `HELLO` handler), so the profile is `auth_command` +
+ * `helloStyle: "not_used"`: `AUTH` goes out, `HELLO` never does.
+ */
+test("the synap profile sends AUTH and never HELLO", async () => {
+  const server = await startServer();
+  const clientPromise = Client.connect(server.addr, Profiles.synap, {
+    credentials: { type: "userPass", user: "root", pass: "hunter2" },
+  });
+  void clientPromise.catch(() => undefined);
+
+  const conn = await server.nextConn();
+  // First frame must be AUTH — Synap has no HELLO handler at all.
+  const auth = await conn.nextRequest();
+  expect(auth.command, "first frame must be AUTH, not HELLO").toBe("AUTH");
+  expect(auth.args, "Synap's AUTH <user> <password> form").toEqual([
+    Value.str("root"),
+    Value.str("hunter2"),
+  ]);
+  conn.sendOk(auth.id, Value.str("OK"));
+
+  const client = await clientPromise;
+  cleanups.push(() => client.close());
+  expect(client.isAuthenticated).toBe(true);
+
+  const pong = client.call("PING");
+  const ping = await conn.nextRequest();
+  expect(ping.command).toBe("PING");
+  conn.sendOk(ping.id, Value.str("PONG"));
+  expect(Value.asStr(await pong)).toBe("PONG");
+});
 
 test("auth_command sends HELLO then AUTH with an api key", async () => {
   const server = await startServer();
-  const clientPromise = Client.connect(server.addr, nexusLike(), {
+  const clientPromise = Client.connect(server.addr, Profiles.nexus, {
     credentials: { type: "apiKey", apiKey: "k-123" },
   });
   void clientPromise.catch(() => undefined);
@@ -271,7 +324,11 @@ test("auth_command sends HELLO then AUTH with an api key", async () => {
   const conn = await server.nextConn();
   const hello = await conn.nextRequest();
   expect(hello.command).toBe("HELLO");
-  expect(hello.args, "positional [Int(1)]").toEqual([Value.int(1)]);
+  expect(
+    hello.args,
+    "Nexus RPC HELLO takes no arguments — the positional [Int(1)] is the " +
+      "RESP3 HELLO, a different surface (BN-023 errata)",
+  ).toEqual([]);
   conn.sendOk(hello.id, Value.null());
   const auth = await conn.nextRequest();
   expect(auth.command).toBe("AUTH");
@@ -292,7 +349,7 @@ test("auth_command sends HELLO then AUTH with an api key", async () => {
 function nexusLike(): Profile {
   return plainProfile({
     handshake: "auth_command",
-    helloStyle: "positional_version",
+    helloStyle: "arg_less",
     errorCodes: "resp3_prefixes",
   });
 }

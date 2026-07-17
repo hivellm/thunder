@@ -42,5 +42,5 @@ pub mod server;
 pub use server::{
     format_bracket_code, format_err, spawn_listener, AuthError, Dispatch, ListenerConfig,
     ListenerHandle, MetricsSnapshot, Principal, PushClosed, PushSender, ServerInfo, Session,
-    NOAUTH, WRONGPASS,
+    NOAUTH, NOPERM, WRONGPASS,
 };

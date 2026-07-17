@@ -53,8 +53,8 @@ Product differences are data, not forks ([SPEC-002](../docs/specs/SPEC-002-profi
 
 | Profile | Scheme / port | Handshake | Error convention | Push |
 |---|---|---|---|---|
-| `Profiles.synap` | `synap://` 15501 | none (v1 legacy) | RESP3 prefixes | enabled |
-| `Profiles.nexus` | `nexus://` 15475 | `HELLO` optional + `AUTH` | RESP3 prefixes | reserved |
+| `Profiles.synap` | `synap://` 15501 | `AUTH` (no `HELLO`) | RESP3 prefixes | enabled |
+| `Profiles.nexus` | `nexus://` 15475 | arg-less `HELLO` optional + `AUTH` | RESP3 prefixes | reserved |
 | `Profiles.vectorizer` | `vectorizer://` 15503 | `HELLO` mandatory | `"[code] message"` | reserved |
 | `Profiles.lexum` | `lexum://` 17001 | `HELLO` mandatory | both | reserved |
 

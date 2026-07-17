@@ -53,6 +53,13 @@ enforcement) is Thunder's.
 - **SRV-011** [P0] Handshake enforcement per SPEC-002 PRO-030: `HelloMandatory` rejects non-HELLO
   first frames; `AuthCommand` applies the `PING/HELLO/AUTH/QUIT` pre-auth allowlist and answers
   `NOAUTH …` otherwise; `None` skips gating.
+
+  Enforcement is **deployment policy, not profile shape** (PRO-001a): the listener SHALL take it
+  from config — `ListenerConfig::auth_required`, default `true`, mirroring Nexus's `auth_required`
+  and Synap's `require_auth` — and a session on a deployment with `auth_required = false` starts
+  ungated regardless of the profile's handshake variant. `AUTH` still validates on its own merits
+  when offered: opening a deployment removes the *requirement*, never the *check*. Deriving
+  enforcement from the handshake variant is the BN-023 defect.
 - **SRV-012** [P0] Credential **validation is product code**: the dispatch trait receives the
   HELLO/AUTH payload via a `authenticate(credentials) -> Result<Principal, AuthError>` hook;
   Thunder owns the state machine, never the credential store.

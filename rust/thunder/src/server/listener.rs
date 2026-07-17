@@ -59,17 +59,41 @@ pub struct ListenerConfig {
     /// Commands slower than this bump `slow_commands_total` (SRV-030).
     /// Zero disables the counter.
     pub slow_threshold: Duration,
+    /// Whether this **deployment** enforces credentials (SRV-011).
+    ///
+    /// This is policy, not protocol: the profile fixes the handshake
+    /// *shape* (does the client lead with `HELLO`? does it authenticate via
+    /// `AUTH`?), while this flag decides whether the server actually refuses
+    /// un-credentialed sessions. Both family products that authenticate on
+    /// the RPC path expose exactly this toggle — Nexus's `auth_required` and
+    /// Synap's `require_auth` — and an open Synap deployment is the reason
+    /// it must live here rather than in the profile.
+    ///
+    /// Ignored under [`Handshake::None`], which has no gate at all. Defaults
+    /// to `true`: a deployment opens up only by saying so.
+    pub auth_required: bool,
 }
 
 impl ListenerConfig {
     /// Config for `addr` with the defaults: no idle timeout, 1000 ms slow
-    /// threshold.
+    /// threshold, credentials enforced.
     pub fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
             idle_timeout: Duration::ZERO,
             slow_threshold: Duration::from_millis(1000),
+            auth_required: true,
         }
+    }
+
+    /// Serve un-credentialed sessions — the `auth_required = false` /
+    /// `require_auth = false` posture (e.g. an open Synap deployment).
+    ///
+    /// The handshake shape is unchanged: a client may still send `AUTH`, and
+    /// it still succeeds or fails on its own merits; nothing is *required*.
+    pub fn open(mut self) -> Self {
+        self.auth_required = false;
+        self
     }
 }
 
@@ -87,6 +111,7 @@ struct ConnShared<D> {
     info: ServerInfo,
     idle_timeout: Duration,
     slow_threshold: Duration,
+    auth_required: bool,
     metrics: Arc<Metrics>,
 }
 
@@ -154,6 +179,7 @@ pub async fn spawn_listener<D: Dispatch>(
         info,
         idle_timeout: config.idle_timeout,
         slow_threshold: config.slow_threshold,
+        auth_required: config.auth_required,
         metrics: Arc::clone(&metrics),
     });
 
@@ -231,13 +257,15 @@ async fn handle_connection<D: Dispatch>(
         PushPolicy::Enabled => Some(PushSender::new(tx.clone())),
         PushPolicy::Reserved => None,
     };
-    // SRV-011: `Handshake::None` skips gating — the session starts
-    // authenticated.
-    let session = Arc::new(Session::new(
-        conn_id,
-        matches!(ctx.profile.handshake, Handshake::None),
-        push,
-    ));
+    // SRV-011: a session starts ungated when the profile has no handshake
+    // at all, or when this deployment does not require credentials
+    // (`auth_required = false` — Nexus's `auth_required`, Synap's
+    // `require_auth`). Shape is the profile's; enforcement is the
+    // deployment's, and conflating them is what left the `synap` profile
+    // unable to authenticate (BN-023).
+    let starts_authenticated =
+        matches!(ctx.profile.handshake, Handshake::None) || !ctx.auth_required;
+    let session = Arc::new(Session::new(conn_id, starts_authenticated, push));
 
     let permits = ctx.profile.max_in_flight.clamp(1, u32::MAX as usize) as u32;
     let in_flight = Arc::new(Semaphore::new(permits as usize));
@@ -505,8 +533,9 @@ async fn handle_hello<D: Dispatch>(
         HelloStyle::NotUsed => {
             Response::err(req_id, format_err("HELLO is not part of this profile"))
         }
-        // Nexus shape: metadata only — credentials travel via AUTH.
-        HelloStyle::PositionalVersion => Response::ok(
+        // Nexus shape: arg-less request, metadata-only reply — credentials
+        // travel via AUTH.
+        HelloStyle::ArgLess => Response::ok(
             req_id,
             Value::Map(vec![
                 (

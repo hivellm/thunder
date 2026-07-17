@@ -14,10 +14,24 @@ import { DEFAULT_MAX_FRAME_BYTES } from "./wire";
 
 /** Handshake style (PRO-001). */
 export type Handshake =
-  /** No RPC-layer auth (Synap v1 legacy). */
+  /**
+   * No RPC-layer handshake at all: the connection is usable immediately.
+   *
+   * No registered family profile uses this. It was the mistaken reading of
+   * Synap, whose RPC path *does* authenticate (`AUTH` handler behind its
+   * `require_auth` toggle) — see the BN-023 errata. It stays available for
+   * custom profiles (PRO-020).
+   */
   | "none"
-  /** `HELLO` optional; `AUTH [api_key]` or `[user, pass]`; pre-auth
-   * allowlist `PING/HELLO/AUTH/QUIT` (Nexus). */
+  /**
+   * `HELLO` optional; `AUTH [api_key]` or `[user, pass]`; pre-auth
+   * allowlist `PING/HELLO/AUTH/QUIT` (Nexus, Synap).
+   *
+   * Whether a deployment *enforces* credentials is its own config
+   * (`auth_required` / `require_auth`), not a protocol dialect: a client
+   * with no credentials configured simply sends no `AUTH`, which is correct
+   * against an open deployment.
+   */
   | "auth_command"
   /** `HELLO` must be the first frame, carrying credentials
    * (Vectorizer / Lexum). */
@@ -25,10 +39,13 @@ export type Handshake =
 
 /** HELLO payload style (PRO-001). */
 export type HelloStyle =
-  /** No HELLO in the profile (Synap). */
+  /** The profile has no `HELLO` command (Synap: its RPC path ships an
+   * `AUTH` handler but no `HELLO` handler at all). */
   | "not_used"
-  /** Positional `[Int(version)]` (Nexus). */
-  | "positional_version"
+  /** `HELLO` with **no arguments**; the reply is a metadata Map
+   * `{server, version, proto, id, authenticated}` (Nexus). Credentials
+   * travel via `AUTH`, never inside the HELLO. */
+  | "arg_less"
   /** Map with `version`, `token` | `api_key`, `client_name`; reply
    * carries `capabilities` (Vectorizer / Lexum). */
   | "map_payload";
@@ -82,13 +99,22 @@ export interface Profile {
   readonly tls: TlsPolicy;
 }
 
-/** Synap — protocol origin. No RPC-layer auth, push enabled, 512 MiB cap
- * (matches `synap-protocol`'s `MAX_FRAME_SIZE`). */
+/**
+ * Synap — protocol origin. `AUTH`-command auth with **no HELLO**, push
+ * enabled, 512 MiB cap (matches `synap-protocol`'s `MAX_FRAME_SIZE`).
+ *
+ * Its RPC listener authenticates inline in the read loop (`AUTH` → shared
+ * `UserManager`, `NOAUTH` gate, `NOPERM` admin ACL) behind the
+ * `require_auth` config toggle; it simply has no `HELLO` handler. The
+ * registry previously said `handshake: none`, which described only the
+ * `require_auth = false` posture and left this profile unable to
+ * authenticate at all (BN-023 errata).
+ */
 const synap: Profile = Object.freeze({
   name: "synap",
   scheme: "synap",
   defaultPort: 15501,
-  handshake: "none",
+  handshake: "auth_command",
   helloStyle: "not_used",
   push: "enabled",
   maxFrameBytes: 512 * 1024 * 1024,
@@ -97,13 +123,19 @@ const synap: Profile = Object.freeze({
   tls: "off",
 } satisfies Profile);
 
-/** Nexus — canonical spec author. Optional HELLO + AUTH, 64 MiB cap. */
+/**
+ * Nexus — canonical spec author. Optional arg-less HELLO + AUTH, 64 MiB cap.
+ *
+ * Its RPC `HELLO` takes no arguments and answers with a metadata Map; the
+ * positional `[Int(1)]` the registry used to claim is the *RESP3* HELLO, a
+ * different surface (BN-023 errata).
+ */
 const nexus: Profile = Object.freeze({
   name: "nexus",
   scheme: "nexus",
   defaultPort: 15475,
   handshake: "auth_command",
-  helloStyle: "positional_version",
+  helloStyle: "arg_less",
   push: "reserved",
   maxFrameBytes: DEFAULT_MAX_FRAME_BYTES,
   maxInFlight: 1024,
@@ -111,7 +143,14 @@ const nexus: Profile = Object.freeze({
   tls: "off",
 } satisfies Profile);
 
-/** Vectorizer — HELLO-mandatory with credentials, `[code]` prefixes. */
+/**
+ * Vectorizer — HELLO-mandatory with credentials, `[code]` prefixes.
+ *
+ * TLS is described in its RPC spec but never wired — its `RpcConfig`
+ * exposes no cert/key keys and the listener binds plain TCP — so the
+ * profile records the capability as reserved, not optional (BN-023
+ * errata). No family product runs RPC TLS today.
+ */
 const vectorizer: Profile = Object.freeze({
   name: "vectorizer",
   scheme: "vectorizer",
@@ -122,7 +161,7 @@ const vectorizer: Profile = Object.freeze({
   maxFrameBytes: DEFAULT_MAX_FRAME_BYTES,
   maxInFlight: 256,
   errorCodes: "bracket_code",
-  tls: "optional",
+  tls: "reserved",
 } satisfies Profile);
 
 /** Lexum — Vectorizer-style handshake, both error conventions. */

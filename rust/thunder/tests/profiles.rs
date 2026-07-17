@@ -47,7 +47,7 @@ fn registry_constants_match_conformance_profiles() {
         assert_eq!(handshake, p.handshake, "{}", p.name);
         let hello = match y.hello_style.as_deref() {
             None => HelloStyle::NotUsed,
-            Some("positional_version") => HelloStyle::PositionalVersion,
+            Some("arg_less") => HelloStyle::ArgLess,
             Some("map_payload") => HelloStyle::MapPayload,
             Some(other) => panic!("unknown hello_style {other}"),
         };

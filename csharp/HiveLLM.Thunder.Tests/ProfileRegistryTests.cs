@@ -86,7 +86,7 @@ public class ProfileRegistryTests
     private static HelloStyle ParseHelloStyle(string? raw) => raw switch
     {
         null or "" or "null" or "~" => HelloStyle.NotUsed,
-        "positional_version" => HelloStyle.PositionalVersion,
+        "arg_less" => HelloStyle.ArgLess,
         "map_payload" => HelloStyle.MapPayload,
         _ => throw new InvalidDataException($"unknown hello_style '{raw}'"),
     };

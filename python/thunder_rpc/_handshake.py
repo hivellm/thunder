@@ -32,9 +32,15 @@ Exchange = Generator["tuple[str, tuple[Value, ...]]", Value, HandshakeInfo]
 
 def handshake_exchange(profile: Profile, config: ClientConfig) -> Exchange:
     """Run the profile handshake before user calls proceed (CLT-002):
-    ``NONE`` sends nothing; ``AUTH_COMMAND`` sends optional ``HELLO`` then
-    ``AUTH`` when credentials are configured; ``HELLO_MANDATORY`` sends the
-    ``HELLO`` map as the first frame and parses the reply.
+    ``NONE`` sends nothing; ``AUTH_COMMAND`` sends the optional arg-less
+    ``HELLO`` (when the profile has one) then ``AUTH`` when credentials are
+    configured; ``HELLO_MANDATORY`` sends the ``HELLO`` map as the first frame
+    and parses the reply.
+
+    Under ``AUTH_COMMAND``, no credentials means no ``AUTH`` frame — which is
+    the correct behavior against a deployment that does not require them
+    (``auth_required`` / ``require_auth`` off). Enforcement is the server's
+    policy, not the profile's.
     """
     if profile.handshake is Handshake.NONE:
         return HandshakeInfo()
@@ -42,9 +48,11 @@ def handshake_exchange(profile: Profile, config: ClientConfig) -> Exchange:
         credentials = config.credentials
         if credentials is None:
             return HandshakeInfo()
-        if profile.hello_style is HelloStyle.POSITIONAL_VERSION:
-            # Optional HELLO announcing the protocol version.
-            yield ("HELLO", (Value.int(1),))
+        if profile.hello_style is HelloStyle.ARG_LESS:
+            # Optional metadata HELLO — takes no arguments; the reply carries
+            # {server, version, proto, id, authenticated}. Credentials go in
+            # the AUTH below.
+            yield ("HELLO", ())
         yield ("AUTH", tuple(Value.str(secret) for secret in credentials.secrets))
         return HandshakeInfo(authenticated=True)
     # HELLO_MANDATORY: the HELLO map is the first frame (PRO-001). Pair

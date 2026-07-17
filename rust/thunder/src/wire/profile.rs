@@ -13,10 +13,20 @@ use crate::wire::DEFAULT_MAX_FRAME_BYTES;
 /// Handshake style (PRO-001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Handshake {
-    /// No RPC-layer auth (Synap v1 legacy).
+    /// No RPC-layer handshake at all: the connection is usable immediately.
+    ///
+    /// No registered family profile uses this. It was the mistaken reading
+    /// of Synap, whose RPC path *does* authenticate (`AUTH` handler behind
+    /// its `require_auth` toggle) — see the BN-023 errata. It stays
+    /// available for custom profiles (PRO-020).
     None,
     /// `HELLO` optional; `AUTH [api_key]` or `[user, pass]`; pre-auth
-    /// allowlist `PING/HELLO/AUTH/QUIT` (Nexus).
+    /// allowlist `PING/HELLO/AUTH/QUIT` (Nexus, Synap).
+    ///
+    /// Whether a deployment *enforces* credentials is its own config
+    /// (`auth_required` / `require_auth`), not a protocol dialect: a client
+    /// with no credentials configured simply sends no `AUTH`, which is
+    /// correct against an open deployment.
     AuthCommand,
     /// `HELLO` must be the first frame, carrying credentials
     /// (Vectorizer / Lexum).
@@ -26,10 +36,13 @@ pub enum Handshake {
 /// HELLO payload style (PRO-001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelloStyle {
-    /// No HELLO in the profile (Synap).
+    /// The profile has no `HELLO` command (Synap: its RPC path ships an
+    /// `AUTH` handler but no `HELLO` handler at all).
     NotUsed,
-    /// Positional `[Int(version)]` (Nexus).
-    PositionalVersion,
+    /// `HELLO` with **no arguments**; the reply is a metadata Map
+    /// `{server, version, proto, id, authenticated}` (Nexus). Credentials
+    /// travel via `AUTH`, never inside the HELLO.
+    ArgLess,
     /// Map with `version`, `token` | `api_key`, `client_name`; reply
     /// carries `capabilities` (Vectorizer / Lexum).
     MapPayload,
@@ -90,14 +103,21 @@ pub struct Profile {
 }
 
 impl Profile {
-    /// Synap — protocol origin. No RPC-layer auth, push enabled, 512 MiB cap
-    /// (matches `synap-protocol`'s `MAX_FRAME_SIZE`).
+    /// Synap — protocol origin. `AUTH`-command auth with **no HELLO**, push
+    /// enabled, 512 MiB cap (matches `synap-protocol`'s `MAX_FRAME_SIZE`).
+    ///
+    /// Its RPC listener authenticates inline in the read loop (`AUTH` →
+    /// shared `UserManager`, `NOAUTH` gate, `NOPERM` admin ACL) behind the
+    /// `require_auth` config toggle; it simply has no `HELLO` handler. The
+    /// registry previously said `handshake: none`, which described only the
+    /// `require_auth = false` posture and left this profile unable to
+    /// authenticate at all (BN-023 errata).
     pub const fn synap() -> Self {
         Self {
             name: "synap",
             scheme: "synap",
             default_port: 15501,
-            handshake: Handshake::None,
+            handshake: Handshake::AuthCommand,
             hello_style: HelloStyle::NotUsed,
             push: PushPolicy::Enabled,
             max_frame_bytes: 512 * 1024 * 1024,
@@ -107,14 +127,19 @@ impl Profile {
         }
     }
 
-    /// Nexus — canonical spec author. Optional HELLO + AUTH, 64 MiB cap.
+    /// Nexus — canonical spec author. Optional arg-less HELLO + AUTH,
+    /// 64 MiB cap.
+    ///
+    /// Its RPC `HELLO` takes no arguments and answers with a metadata Map;
+    /// the positional `[Int(1)]` the registry used to claim is the *RESP3*
+    /// HELLO, a different surface (BN-023 errata).
     pub const fn nexus() -> Self {
         Self {
             name: "nexus",
             scheme: "nexus",
             default_port: 15475,
             handshake: Handshake::AuthCommand,
-            hello_style: HelloStyle::PositionalVersion,
+            hello_style: HelloStyle::ArgLess,
             push: PushPolicy::Reserved,
             max_frame_bytes: DEFAULT_MAX_FRAME_BYTES,
             max_in_flight: 1024,
@@ -124,6 +149,11 @@ impl Profile {
     }
 
     /// Vectorizer — HELLO-mandatory with credentials, `[code]` prefixes.
+    ///
+    /// TLS is described in its RPC spec but never wired — its `RpcConfig`
+    /// exposes no cert/key keys and the listener binds plain TCP — so the
+    /// profile records the capability as reserved, not optional (BN-023
+    /// errata). No family product runs RPC TLS today.
     pub const fn vectorizer() -> Self {
         Self {
             name: "vectorizer",
@@ -135,7 +165,7 @@ impl Profile {
             max_frame_bytes: DEFAULT_MAX_FRAME_BYTES,
             max_in_flight: 256,
             error_codes: ErrorConvention::BracketCode,
-            tls: TlsPolicy::Optional,
+            tls: TlsPolicy::Reserved,
         }
     }
 

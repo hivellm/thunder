@@ -34,7 +34,7 @@ _HANDSHAKE = {
 }
 _HELLO_STYLE = {
     None: HelloStyle.NOT_USED,
-    "positional_version": HelloStyle.POSITIONAL_VERSION,
+    "arg_less": HelloStyle.ARG_LESS,
     "map_payload": HelloStyle.MAP_PAYLOAD,
 }
 _PUSH = {"reserved": PushPolicy.RESERVED, "enabled": PushPolicy.ENABLED}
@@ -51,16 +51,6 @@ _TLS = {
 }
 
 
-def _yaml_token(raw: object) -> object:
-    """PyYAML speaks YAML 1.1, where the bare scalar ``off`` parses as
-    boolean False — undo that so registry tokens stay strings."""
-    if raw is False:
-        return "off"
-    if raw is True:
-        return "on"
-    return raw
-
-
 @pytest.mark.parametrize("profile", registry(), ids=[p.name for p in registry()])
 def test_registry_constant_matches_conformance_profile(profile: Profile) -> None:
     raw = yaml.safe_load(
@@ -75,7 +65,9 @@ def test_registry_constant_matches_conformance_profile(profile: Profile) -> None
     assert _HELLO_STYLE[raw["hello_style"]] is profile.hello_style
     assert _PUSH[raw["push"]] is profile.push
     assert _ERRORS[raw["error_codes"]] is profile.error_codes
-    assert _TLS[_yaml_token(raw["tls"])] is profile.tls
+    # The YAML quotes `"off"` so YAML 1.1 loaders cannot coerce it to False;
+    # the token is a plain string on every loader.
+    assert _TLS[raw["tls"]] is profile.tls
 
 
 def test_all_four_family_profiles_pinned() -> None:

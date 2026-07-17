@@ -7,4 +7,9 @@ push: reserved
 max_frame_bytes: 67108864
 max_in_flight: 256
 error_codes: bracket_code  # "[<code>] message" prefix
-tls: optional_rustls
+# BN-023 errata: was `optional_rustls`. The rustls posture is described in
+# Vectorizer's RPC spec but never wired — its RpcConfig exposes no cert/key keys
+# (vectorizer/src/config/vectorizer.rs:117-131) and the listener binds plain TCP
+# (protocol/rpc/server.rs:62). No family product runs RPC TLS today; Thunder's
+# uniform optional layer will be the first (SRV-040).
+tls: reserved_config

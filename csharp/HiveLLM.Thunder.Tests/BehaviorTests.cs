@@ -121,8 +121,74 @@ public class BehaviorTests
             await conn.SendOkAsync(request.Id, Value.Str("PONG"));
         });
 
+        // PlainProfile() is the genuine Handshake.None case. (This test used
+        // to ride on Profile.Synap, which is AuthCommand since BN-023.)
+        await using var client = await ThunderClient.ConnectAsync(server.Address, PlainProfile());
+        Assert.False(client.IsAuthenticated);
+        Assert.Equal("PONG", (await client.CallAsync("PING")).AsStr());
+        await serverTask;
+    }
+
+    /// <summary>
+    /// The client half of the shape/policy split, on the profile BN-023
+    /// changed: <c>synap</c> is <see cref="Handshake.AuthCommand"/> now, but
+    /// with no credentials configured it sends no <c>AUTH</c> at all — exactly
+    /// right against an open deployment (<c>require_auth</c> off). It must
+    /// also never send <c>HELLO</c> (<see cref="HelloStyle.NotUsed"/>).
+    /// </summary>
+    [Fact]
+    public async Task Synap_profile_without_credentials_sends_nothing()
+    {
+        using var server = new MockServer();
+        var serverTask = Task.Run(async () =>
+        {
+            using var conn = await server.AcceptAsync();
+            var request = await conn.ReadRequestAsync();
+            Assert.Equal("PING", request.Command); // no AUTH/HELLO without credentials
+            await conn.SendOkAsync(request.Id, Value.Str("PONG"));
+        });
+
         await using var client = await ThunderClient.ConnectAsync(server.Address, Profile.Synap);
         Assert.False(client.IsAuthenticated);
+        Assert.Equal("PONG", (await client.CallAsync("PING")).AsStr());
+        await serverTask;
+    }
+
+    /// <summary>
+    /// BN-023 regression: the <c>synap</c> profile must be able to
+    /// authenticate.
+    /// <para>
+    /// It used to be <see cref="Handshake.None"/>, so a credentialed client
+    /// sent <b>nothing</b> and could never reach a <c>require_auth</c> Synap.
+    /// Synap's RPC path has an <c>AUTH</c> handler (and no <c>HELLO</c>
+    /// handler), so the profile is <see cref="Handshake.AuthCommand"/> +
+    /// <see cref="HelloStyle.NotUsed"/>: <c>AUTH</c> goes out, <c>HELLO</c>
+    /// never does.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Synap_profile_sends_auth_and_never_hello()
+    {
+        using var server = new MockServer();
+        var serverTask = Task.Run(async () =>
+        {
+            using var conn = await server.AcceptAsync();
+            // First frame must be AUTH — Synap has no HELLO handler at all.
+            var auth = await conn.ReadRequestAsync();
+            Assert.Equal("AUTH", auth.Command);
+            Assert.Equal(
+                new[] { Value.Str("root"), Value.Str("hunter2") }, // AUTH <user> <password>
+                auth.Args);
+            await conn.SendOkAsync(auth.Id, Value.Str("OK"));
+            var ping = await conn.ReadRequestAsync();
+            Assert.Equal("PING", ping.Command);
+            await conn.SendOkAsync(ping.Id, Value.Str("PONG"));
+        });
+
+        var config = new ClientConfig { Credentials = Credentials.UserPass("root", "hunter2") };
+        await using var client = await ThunderClient.ConnectAsync(
+            server.Address, Profile.Synap, config);
+        Assert.True(client.IsAuthenticated);
         Assert.Equal("PONG", (await client.CallAsync("PING")).AsStr());
         await serverTask;
     }
@@ -136,7 +202,9 @@ public class BehaviorTests
             using var conn = await server.AcceptAsync();
             var hello = await conn.ReadRequestAsync();
             Assert.Equal("HELLO", hello.Command);
-            Assert.Equal(new[] { Value.Int(1) }, hello.Args); // positional [Int(1)]
+            // Nexus RPC HELLO takes no arguments — the positional [Int(1)] is
+            // the RESP3 HELLO, a different surface (BN-023 errata).
+            Assert.Empty(hello.Args);
             await conn.SendOkAsync(hello.Id, Value.Null);
             var auth = await conn.ReadRequestAsync();
             Assert.Equal("AUTH", auth.Command);

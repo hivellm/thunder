@@ -224,6 +224,22 @@ and the vocabulary**, never the **protocol behavior**.
 
 ### BN-023 — Three profile-registry cells, one corpus vector and the SPEC-002 prose mischaracterize the products; fix them in one coordinated errata commit, independent of any normalization decision
 
+> **RESOLVED 2026-07-17** (`phase6_registry-errata`). All four items below are fixed across the
+> YAMLs, the corpus vector (bytes regenerated from the reference encoder), SPEC-002/003/004 and the
+> `Profile` constants + tests in all four languages, in one commit. Two follow-ons the fix forced,
+> worth recording because they outlive the errata:
+> - `HelloStyle::PositionalVersion` is **gone**, replaced by `ArgLess` — no RPC product ever used a
+>   positional HELLO.
+> - The server was deriving auth **enforcement** from the handshake **shape** (a session started
+>   authenticated only under `Handshake::None`), so the corrected `synap` profile would have made
+>   every Synap deployment closed — as wrong as the old cell made them all open. Enforcement moved
+>   to deployment config (`ListenerConfig::auth_required`, default `true`, mirroring Nexus's
+>   `auth_required` / Synap's `require_auth`), and the shape ≠ policy rule is now normative in
+>   SPEC-002 **PRO-001a** and SPEC-004 SRV-011. This is BN-012's principle landing in code ahead of
+>   the normalization phases that assume it.
+>
+> The finding below is preserved as the evidence record.
+
 - **Evidence** (all found by sweeping the product sources for this analysis; file:line anchors in
   BN-003/BN-004/BN-007):
   1. **`synap.yaml:4` `handshake: none`** — Synap's RPC path has an `AUTH` handler, a `NOAUTH` gate

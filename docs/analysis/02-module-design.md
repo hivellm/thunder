@@ -59,7 +59,7 @@ graph TD
 ```rust
 pub struct Profile {
     pub handshake: Handshake,        // None | AuthCommand | HelloMandatory
-    pub hello_style: HelloStyle,     // PositionalVersion (Nexus [Int(1)]) | MapPayload (Vectorizer)
+    pub hello_style: HelloStyle,     // NotUsed (Synap) | ArgLess (Nexus, no args) | MapPayload (Vectorizer)
     pub push: PushPolicy,            // Reserved | Enabled(handler)
     pub max_frame_bytes: u32,        // default 64 MiB
     pub max_in_flight: u32,          // Nexus 1024 / Vectorizer 256

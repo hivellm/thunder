@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: typescript
     strategy:
       fail-fast: false  # See all platform results even if one fails
       matrix:

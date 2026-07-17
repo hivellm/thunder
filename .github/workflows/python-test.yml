@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: python
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]

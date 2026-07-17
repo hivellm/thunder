@@ -17,9 +17,11 @@
 //! frame helpers are available behind the `tokio` feature.
 
 mod frame;
+pub mod profile;
 mod value;
 
 pub use frame::{decode_frame, decode_frame_with_limit, encode_frame, DecodeError};
+pub use profile::Profile;
 pub use value::{Request, Response, Value};
 
 #[cfg(feature = "tokio")]

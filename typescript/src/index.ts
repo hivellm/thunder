@@ -1,15 +1,74 @@
 /**
  * @hivehub/thunder — HiveLLM binary RPC (wire v1, frozen).
  *
- * Skeleton package: the wire codec + client land at DAG T3.1
- * (`phase3_typescript-package`), corpus-first per SPEC-005.
+ * One frame is `u32 LE length` + MessagePack body over the 8-variant
+ * {@link Value} model (SPEC-001). The {@link Client} multiplexes
+ * concurrent calls over one TCP connection, driven by a {@link Profile}
+ * (SPEC-002/003).
+ *
+ * ```ts
+ * import { Client, Profiles, Value } from "@hivehub/thunder";
+ *
+ * const client = await Client.connect("vectorizer://localhost", Profiles.vectorizer, {
+ *   credentials: { type: "apiKey", apiKey: "secret" },
+ * });
+ * const pong = await client.call("PING");
+ * console.log(Value.asStr(pong)); // "PONG"
+ * await client.close();
+ * ```
  */
 
-/** Negotiated wire protocol version. v1 is the only version anywhere. */
-export const WIRE_VERSION = 1;
+export {
+  I64_MAX,
+  I64_MIN,
+  Response,
+  Value,
+} from "./value";
+export type { Request, ResponseResult } from "./value";
 
-/** Reserved frame id for server push frames (WIRE-005). */
-export const PUSH_ID = 0xffff_ffff;
+export {
+  DEFAULT_MAX_FRAME_BYTES,
+  FrameReader,
+  PUSH_ID,
+  WIRE_VERSION,
+  decodeRequest,
+  decodeRequestBody,
+  decodeResponse,
+  decodeResponseBody,
+  encodeRequest,
+  encodeResponse,
+} from "./wire";
+export type { DecodedFrame } from "./wire";
 
-/** Default frame-body cap: 64 MiB, checked before allocation (WIRE-020). */
-export const DEFAULT_MAX_FRAME_BYTES = 64 * 1024 * 1024;
+export {
+  AuthError,
+  ConnectionError,
+  DecodeError,
+  FrameTooLargeError,
+  ServerError,
+  ThunderError,
+  TimeoutError,
+  classifyServerError,
+} from "./errors";
+export type { ErrorClass } from "./errors";
+
+export { Profiles } from "./profile";
+export type {
+  ErrorConvention,
+  Handshake,
+  HelloStyle,
+  Profile,
+  PushPolicy,
+  TlsPolicy,
+} from "./profile";
+
+export { parseEndpoint } from "./endpoint";
+export type { Endpoint } from "./endpoint";
+
+export { Client } from "./client";
+export type {
+  CallOptions,
+  ClientOptions,
+  Credentials,
+  HandshakeInfo,
+} from "./client";

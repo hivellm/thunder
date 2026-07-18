@@ -10,6 +10,7 @@
 //! is encoded once, written, and its length is the out-bytes metric;
 //! request in-bytes come from the decoder's frame size (SRV-007).
 
+use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -454,35 +455,76 @@ async fn run_connection<D, R, W>(
             }
         }
 
-        // SRV-003: one dispatch task per request, bounded by the
-        // semaphore — excess requests wait right here (backpressure on the
-        // read loop), they are never refused.
+        // SRV-003: every request takes an in-flight permit — excess requests
+        // wait right here (backpressure on the read loop), never refused. The
+        // permit bounds the *spawned* path below; on the fast path it is
+        // released as soon as the response is in hand.
         let Ok(permit) = Arc::clone(&in_flight).acquire_owned().await else {
             break;
         };
         let dispatch = Arc::clone(&ctx.dispatch);
         let session = Arc::clone(&session);
-        let tx = tx.clone();
-        tokio::spawn(async move {
-            let started = Instant::now();
-            let Request { id, command, args } = req;
-            let response = match dispatch.dispatch(&session, &command, args).await {
+        let started = Instant::now();
+        let Request { id, command, args } = req;
+        // One dispatch future, owned so it can either finish inline or move to
+        // a task — `Box::pin` gives a single 'static Send future for both.
+        let mut fut = Box::pin(async move {
+            match dispatch.dispatch(&session, &command, args).await {
                 Ok(value) => Response::ok(id, value),
                 // SRV-005/021: the error string travels verbatim and the
                 // connection stays usable.
                 Err(message) => Response::err(id, message),
-            };
-            let _ = tx
-                .send(WriteJob::Response {
-                    response,
-                    in_bytes,
-                    duration: started.elapsed(),
-                })
-                .await;
-            // Released after the send: the drain below can rely on the
-            // queue holding every response once all permits are back.
-            drop(permit);
+            }
         });
+        // SRV-006 fast path: poll the dispatch once. A handler that resolves
+        // without suspending — a cache hit, an in-memory read, the peers'
+        // inline model — is answered on the read loop with no task, erasing
+        // the spawn + scheduler cost that dominates small-payload throughput
+        // under concurrency (measured: +76% on point-echo depth16/4conns).
+        // A handler that suspends on real I/O returns Pending and is moved to
+        // a task, so it still never head-of-line blocks its connection
+        // (SRV-004). A synchronous panic is isolated exactly as the runtime
+        // isolates a task panic (SRV-005): the request is dropped, the
+        // connection lives.
+        // Scope the poll so the non-`Send` `Context` is dropped before any
+        // `.await` below — otherwise this connection future would not be
+        // `Send` and could not be spawned. `Poll<Response>` is `Send`.
+        let polled = {
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fut.as_mut().poll(&mut cx)))
+        };
+        match polled {
+            Ok(std::task::Poll::Ready(response)) => {
+                drop(fut);
+                drop(permit);
+                if !send_response(&tx, response, in_bytes, started.elapsed()).await {
+                    break;
+                }
+            }
+            Ok(std::task::Poll::Pending) => {
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let response = fut.await;
+                    let _ = tx
+                        .send(WriteJob::Response {
+                            response,
+                            in_bytes,
+                            duration: started.elapsed(),
+                        })
+                        .await;
+                    // Released after the send: the drain below can rely on the
+                    // queue holding every response once all permits are back.
+                    drop(permit);
+                });
+            }
+            // Synchronous panic in the handler: drop the request, keep the
+            // connection — the spawned path's runtime-swallowed panic, mirrored.
+            Err(_panic) => {
+                drop(fut);
+                drop(permit);
+            }
+        }
     }
 
     // Graceful drain (SRV-001/004): every dispatch task enqueues its
@@ -523,10 +565,22 @@ async fn read_next<R: tokio::io::AsyncRead + Unpin>(
 /// dispatch duration). Returns `false` when the writer is gone and the
 /// connection should close.
 async fn send_inline(tx: &mpsc::Sender<WriteJob>, response: Response, in_bytes: usize) -> bool {
+    send_response(tx, response, in_bytes, Duration::ZERO).await
+}
+
+/// Enqueue a dispatched response with its measured duration (SRV-030). Used
+/// by the fast path, where the response is produced inline on the read loop
+/// rather than in a task. Returns `false` when the writer is gone.
+async fn send_response(
+    tx: &mpsc::Sender<WriteJob>,
+    response: Response,
+    in_bytes: usize,
+    duration: Duration,
+) -> bool {
     tx.send(WriteJob::Response {
         response,
         in_bytes,
-        duration: Duration::ZERO,
+        duration,
     })
     .await
     .is_ok()

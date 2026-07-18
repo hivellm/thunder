@@ -44,6 +44,7 @@ use crate::grpc::{spawn_grpc_listener, GrpcHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
 use crate::memcached::{spawn_memcached_listener, McHandle};
 use crate::mongodb::{spawn_mongodb_listener, MongoHandle};
+use crate::mqtt::{spawn_mqtt_broker, MqttHandle};
 use crate::msgpack_rpc::{spawn_msgpack_rpc_listener, MsgpackHandle};
 use crate::nats::{spawn_nats_broker, NatsHandle};
 use crate::postgres::{spawn_postgres_listener, PgHandle};
@@ -141,6 +142,13 @@ pub enum Lane {
     /// point-to-point lane's as if they were alike is a category error
     /// (phase4_shootout-expansion). Excluded from [`Lane::ALL`].
     Nats,
+    /// **Reference, and the same broker SHAPE as [`Lane::Nats`]**: MQTT 5
+    /// request/response ([`crate::mqtt`]) via Response Topic + Correlation
+    /// Data. Four traversals per round trip, so it is legitimately compared
+    /// against NATS — same topology, binary wire against text — and not
+    /// against a point-to-point transport (phase4_shootout-expansion).
+    /// Excluded from [`Lane::ALL`].
+    Mqtt,
 }
 
 impl Lane {
@@ -160,6 +168,7 @@ impl Lane {
             Self::Thrift => "thrift",
             Self::Capnp => "capnp",
             Self::Nats => "nats",
+            Self::Mqtt => "mqtt",
         }
     }
 
@@ -171,7 +180,7 @@ impl Lane {
 
     /// The G5 lanes plus the diagnostic and reference lanes measured under
     /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 13] = [
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 14] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
@@ -185,6 +194,7 @@ impl Lane {
         Lane::Thrift,
         Lane::Capnp,
         Lane::Nats,
+        Lane::Mqtt,
     ];
 }
 
@@ -288,6 +298,8 @@ pub struct Targets {
     pub capnp: CapnpHandle,
     /// The NATS broker handle ([`crate::nats`]).
     pub nats: NatsHandle,
+    /// The MQTT broker handle ([`crate::mqtt`]).
+    pub mqtt: MqttHandle,
 }
 
 impl Targets {
@@ -306,6 +318,7 @@ impl Targets {
         self.thrift.stop().await;
         self.capnp.stop().await;
         self.nats.stop().await;
+        self.mqtt.stop().await;
     }
 }
 
@@ -335,6 +348,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let thrift = spawn_thrift_listener(Arc::clone(&backend), loopback).await?;
     let capnp = spawn_capnp_listener(Arc::clone(&backend), loopback).await?;
     let nats = spawn_nats_broker(Arc::clone(&backend), loopback).await?;
+    let mqtt = spawn_mqtt_broker(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -350,6 +364,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         thrift,
         capnp,
         nats,
+        mqtt,
     })
 }
 
@@ -387,6 +402,7 @@ pub async fn run_scenario(
                 Lane::Thrift => crate::thrift_lane::storm(&targets.thrift, storms, cfg).await?,
                 Lane::Capnp => crate::capnp_lane::storm(&targets.capnp, storms, cfg).await?,
                 Lane::Nats => crate::nats::storm(&targets.nats, storms, cfg).await?,
+                Lane::Mqtt => crate::mqtt::storm(&targets.mqtt, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -419,6 +435,7 @@ pub async fn run_scenario(
                     Lane::Thrift => crate::thrift_lane::cell(&targets.thrift, &spec, cfg).await?,
                     Lane::Capnp => crate::capnp_lane::cell(&targets.capnp, &spec, cfg).await?,
                     Lane::Nats => crate::nats::cell(&targets.nats, &spec, cfg).await?,
+                    Lane::Mqtt => crate::mqtt::cell(&targets.mqtt, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

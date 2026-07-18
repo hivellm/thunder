@@ -60,6 +60,7 @@ pub mod grpc;
 pub mod http;
 pub mod memcached;
 pub mod mongodb;
+pub mod mqtt;
 pub mod msgpack_rpc;
 pub mod nats;
 pub mod pinning;

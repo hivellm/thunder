@@ -1,6 +1,6 @@
 {
   "name": "@hivehub/thunder",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "HiveLLM binary RPC (wire v1, frozen) — length-prefixed MessagePack codec + multiplexed, config-driven client",
   "type": "module",
   "license": "Apache-2.0",

@@ -28,6 +28,13 @@ pub(crate) enum WriteJob {
         in_bytes: usize,
         /// Dispatch duration for the duration / slow counters.
         duration: Duration,
+        /// Command name, carried **only** when a [`MetricsObserver`] is
+        /// installed — the observer needs the label, and the built-in metrics
+        /// do not. `None` on the default path, so a listener without an
+        /// observer allocates nothing extra per request.
+        ///
+        /// [`MetricsObserver`]: crate::server::MetricsObserver
+        command: Option<Box<str>>,
     },
     /// A server-initiated frame (`id == PUSH_ID`, WIRE-005).
     Push(Response),

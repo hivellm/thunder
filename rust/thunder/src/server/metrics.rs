@@ -7,11 +7,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// The eight atomic series of SRV-030. Interior to the listener; consumers
-/// read it through [`MetricsSnapshot`].
+/// The SRV-030 atomic series. Interior to the listener; consumers read it
+/// through [`MetricsSnapshot`].
 #[derive(Debug, Default)]
 pub(crate) struct Metrics {
     connections: AtomicU64,
+    connections_refused_total: AtomicU64,
     commands_total: AtomicU64,
     commands_error_total: AtomicU64,
     command_duration_microseconds_total: AtomicU64,
@@ -25,6 +26,14 @@ impl Metrics {
     /// Gauge up: one connection accepted.
     pub(crate) fn connection_opened(&self) {
         self.connections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// One accept refused because the listener was at its connection ceiling
+    /// (`ListenerConfig::max_connections`). Counted so a ceiling that is
+    /// engaging is visible instead of looking like client-side failures.
+    pub(crate) fn connection_refused(&self) {
+        self.connections_refused_total
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     /// Gauge down: one connection fully drained and closed.
@@ -79,6 +88,7 @@ impl Metrics {
     pub(crate) fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
             connections: self.connections.load(Ordering::Relaxed),
+            connections_refused_total: self.connections_refused_total.load(Ordering::Relaxed),
             commands_total: self.commands_total.load(Ordering::Relaxed),
             commands_error_total: self.commands_error_total.load(Ordering::Relaxed),
             command_duration_microseconds_total: self
@@ -98,6 +108,8 @@ impl Metrics {
 pub struct MetricsSnapshot {
     /// Currently open connections (gauge).
     pub connections: u64,
+    /// Accepts refused at the `max_connections` ceiling.
+    pub connections_refused_total: u64,
     /// Responses written, success or error.
     pub commands_total: u64,
     /// Error responses written.

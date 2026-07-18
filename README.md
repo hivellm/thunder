@@ -2,7 +2,7 @@
 
 **⚡ The HiveLLM binary RPC protocol as a single shared module — one wire, one codec, one client contract, every language**
 
-![Status](https://img.shields.io/badge/version-0.1.1-success.svg)
+![Status](https://img.shields.io/badge/version-0.1.2-success.svg)
 ![Wire](https://img.shields.io/badge/wire%20protocol-v1%20(frozen)-success.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 ![Languages](https://img.shields.io/badge/targets-Rust%20%7C%20TypeScript%20%7C%20Python%20%7C%20C%23%20%7C%20Go-orange.svg)
@@ -68,7 +68,7 @@ Every Thunder client, in every language: demux by id (pipelining) · frame cap o
 
 ## 📦 Packages
 
-All four registry packages are at **0.1.1**, with Go alongside them as a fifth full client. Wire v1 is frozen; the API is not — 0.x may still break.
+All four registry packages are at **0.1.2**, with Go alongside them as a fifth full client. Wire v1 is frozen; the API is not — 0.x may still break.
 
 | Language | Package | Install | Serialization |
 |---|---|---|---|

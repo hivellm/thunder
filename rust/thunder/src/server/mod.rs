@@ -21,12 +21,14 @@ mod dispatch;
 mod errors;
 mod listener;
 mod metrics;
+mod observer;
 mod session;
 
 pub use dispatch::{AuthError, Credentials, Dispatch, Principal};
 pub use errors::{format_bracket_code, format_err, NOAUTH, NOPERM, WRONGPASS};
-pub use listener::{spawn_listener, ListenerConfig, ListenerHandle, ServerInfo};
+pub use listener::{spawn_listener, ListenerConfig, ListenerHandle, MetricsRef, ServerInfo};
 pub use metrics::MetricsSnapshot;
+pub use observer::MetricsObserver;
 pub use session::{PushClosed, PushSender, Session};
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! In-crate integration suite (SRV-050), un-gated: a real TCP listener, a
 //! test dispatch, and the raw `crate::wire` codec as the client.
 
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -672,4 +673,222 @@ fn error_helpers_format_the_family_conventions() {
     assert_eq!(crate::server::format_err("boom"), "ERR boom");
     assert!(NOAUTH.starts_with("NOAUTH "));
     assert!(WRONGPASS.starts_with("WRONGPASS "));
+}
+
+// ── Adoption fixes from the Synap swap (0.1.2) ──────────────────────────────
+
+/// GH #2: at the ceiling a further accept is **refused**, not queued — the
+/// client fails fast instead of hanging on a connection nobody will read.
+#[tokio::test]
+async fn max_connections_refuses_past_the_ceiling_and_counts_it() {
+    let (handle, _d) = start_with(no_handshake_profile(), config().with_max_connections(2)).await;
+
+    let _a = connect(&handle).await;
+    let _b = connect(&handle).await;
+    // Both slots are taken; let the accept loop settle before the third dial.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut refused = TcpStream::connect(handle.local_addr()).await.unwrap();
+    // The listener drops the socket immediately, so the far end reads EOF
+    // rather than blocking forever.
+    let mut buf = [0u8; 1];
+    let read = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::io::AsyncReadExt::read(&mut refused, &mut buf),
+    )
+    .await
+    .expect("a refused connection must not hang");
+    assert_eq!(read.unwrap(), 0, "refused connection is closed, not queued");
+
+    assert_eq!(
+        handle.snapshot().connections_refused_total,
+        1,
+        "the ceiling must be observable, not silent"
+    );
+}
+
+/// GH #2: a closed connection frees its slot, so the ceiling bounds
+/// *concurrent* connections rather than total accepts over time.
+#[tokio::test]
+async fn max_connections_frees_a_slot_when_a_connection_closes() {
+    let (handle, _d) = start_with(no_handshake_profile(), config().with_max_connections(1)).await;
+
+    let first = connect(&handle).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    drop(first);
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    // The slot came back: this connection is served, not refused.
+    let mut second = connect(&handle).await;
+    let response = call(&mut second, 1, "PING", vec![]).await;
+    assert_eq!(response.result.unwrap(), Value::Str("PONG".to_owned()));
+}
+
+/// GH #2: the default stays unbounded, so existing deployments are untouched.
+#[tokio::test]
+async fn max_connections_defaults_to_unbounded() {
+    assert_eq!(ListenerConfig::default().max_connections, 0);
+    let (handle, _d) = start(no_handshake_profile()).await;
+    let mut conns = Vec::new();
+    for _ in 0..8 {
+        conns.push(connect(&handle).await);
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(handle.snapshot().connections_refused_total, 0);
+}
+
+/// GH #5: an `Arc<ListenerHandle>` can both observe and drain. Before this,
+/// sharing the handle made `stop()` unreachable and shutdown silently
+/// downgraded to the fire-and-forget `Drop` path.
+#[tokio::test]
+async fn a_shared_handle_can_both_observe_and_stop() {
+    let (handle, _d) = start(no_handshake_profile()).await;
+    let handle = Arc::new(handle);
+
+    // The "exporter task" holds a metrics reader; the handle stays shared.
+    let reader = handle.metrics();
+    let observer = Arc::clone(&handle);
+    assert_eq!(reader.snapshot().connections, 0);
+    assert_eq!(observer.snapshot().connections, 0);
+
+    let mut conn = connect(&handle).await;
+    let _ = call(&mut conn, 1, "PING", vec![]).await;
+    assert_eq!(reader.snapshot().commands_total, 1);
+
+    // Graceful drain through the shared handle — the point of the fix.
+    handle.stop().await;
+    assert!(TcpStream::connect(handle.local_addr()).await.is_err());
+}
+
+/// GH #5: stopping twice is safe — the second call observes the shutdown the
+/// first one completed rather than hanging.
+#[tokio::test]
+async fn stopping_twice_is_safe() {
+    let (handle, _d) = start(no_handshake_profile()).await;
+    handle.stop().await;
+    tokio::time::timeout(Duration::from_secs(2), handle.stop())
+        .await
+        .expect("a second stop must return, not hang");
+}
+
+/// GH #3: the observer sees every command with the label and both byte
+/// counts — the dimensions cumulative totals cannot reconstruct.
+#[tokio::test]
+async fn the_metrics_observer_sees_each_command_with_its_label() {
+    #[derive(Default)]
+    struct Recorder {
+        seen: Mutex<Vec<(String, usize, usize, bool)>>,
+        opened: AtomicUsize,
+        closed: AtomicUsize,
+    }
+    impl crate::server::MetricsObserver for Recorder {
+        fn command_completed(
+            &self,
+            command: &str,
+            in_bytes: usize,
+            out_bytes: usize,
+            _duration: Duration,
+            is_error: bool,
+        ) {
+            self.seen
+                .lock()
+                .unwrap()
+                .push((command.to_owned(), in_bytes, out_bytes, is_error));
+        }
+        fn connection_opened(&self) {
+            self.opened.fetch_add(1, AtomicOrdering::Relaxed);
+        }
+        fn connection_closed(&self) {
+            self.closed.fetch_add(1, AtomicOrdering::Relaxed);
+        }
+    }
+
+    let recorder = Arc::new(Recorder::default());
+    let observer: Arc<dyn crate::server::MetricsObserver> = Arc::clone(&recorder) as _;
+    let (handle, _d) = start_with(no_handshake_profile(), config().with_observer(observer)).await;
+
+    let mut conn = connect(&handle).await;
+    let ping_in = send(&mut conn, 1, "PING", vec![]).await;
+    let _ = recv(&mut conn).await;
+    let bad_in = send(&mut conn, 2, "NOPE", vec![]).await;
+    let _ = recv(&mut conn).await;
+    drop(conn);
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let seen = recorder.seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 2, "one callback per completed command");
+
+    let (command, in_bytes, out_bytes, is_error) = &seen[0];
+    assert_eq!(command, "PING", "the label is what totals cannot give");
+    assert_eq!(
+        *in_bytes, ping_in,
+        "in-bytes match the decoder's frame size"
+    );
+    assert!(*out_bytes > 0);
+    assert!(!*is_error);
+
+    let (command, in_bytes, _, is_error) = &seen[1];
+    assert_eq!(command, "NOPE");
+    assert_eq!(*in_bytes, bad_in);
+    assert!(*is_error, "an Err response is flagged as an error");
+
+    assert_eq!(recorder.opened.load(AtomicOrdering::Relaxed), 1);
+    assert_eq!(recorder.closed.load(AtomicOrdering::Relaxed), 1);
+}
+
+/// GH #3: the observer's byte counts agree with the built-in totals, because
+/// both record at the same point from the same values — the disagreement the
+/// issue reported when a product timed inside `dispatch` instead.
+#[tokio::test]
+async fn observer_and_builtin_metrics_agree() {
+    #[derive(Default)]
+    struct Sum {
+        in_bytes: AtomicUsize,
+        out_bytes: AtomicUsize,
+    }
+    impl crate::server::MetricsObserver for Sum {
+        fn command_completed(
+            &self,
+            _command: &str,
+            in_bytes: usize,
+            out_bytes: usize,
+            _duration: Duration,
+            _is_error: bool,
+        ) {
+            self.in_bytes.fetch_add(in_bytes, AtomicOrdering::Relaxed);
+            self.out_bytes.fetch_add(out_bytes, AtomicOrdering::Relaxed);
+        }
+    }
+
+    let sum = Arc::new(Sum::default());
+    let observer: Arc<dyn crate::server::MetricsObserver> = Arc::clone(&sum) as _;
+    let (handle, _d) = start_with(no_handshake_profile(), config().with_observer(observer)).await;
+
+    let mut conn = connect(&handle).await;
+    for id in 1..=5 {
+        let _ = call(&mut conn, id, "PING", vec![]).await;
+    }
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let snapshot = handle.snapshot();
+    assert_eq!(
+        sum.in_bytes.load(AtomicOrdering::Relaxed) as u64,
+        snapshot.frame_bytes_in_total
+    );
+    assert_eq!(
+        sum.out_bytes.load(AtomicOrdering::Relaxed) as u64,
+        snapshot.frame_bytes_out_total
+    );
+}
+
+/// GH #3: with no observer installed nothing runs and nothing is allocated for
+/// the label — the default path is exactly what it was.
+#[tokio::test]
+async fn no_observer_means_no_observer_work() {
+    let (handle, _d) = start(no_handshake_profile()).await;
+    assert!(ListenerConfig::default().observer.is_none());
+    let mut conn = connect(&handle).await;
+    let _ = call(&mut conn, 1, "PING", vec![]).await;
+    // The built-in metrics still record, unchanged.
+    assert_eq!(handle.snapshot().commands_total, 1);
 }

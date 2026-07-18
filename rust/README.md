@@ -138,6 +138,37 @@ Two things worth knowing:
 - **Auth is connection-sticky.** `HELLO`/`AUTH` happens once; Thunder flips the
   session flag itself, so product code never touches the state machine.
 
+### Operating a listener
+
+```rust
+let config = ListenerConfig::default()
+    // Refuse accepts past the ceiling — the socket is dropped immediately so a
+    // client fails fast rather than hanging on a connection nobody will read.
+    // `0` (the default) is unbounded. Bounds memory and slow-loris exposure;
+    // Config::max_in_flight is a different resource (requests per connection).
+    .with_max_connections(10_000)
+    // Per-command callbacks: the dimensions cumulative totals cannot give.
+    .with_observer(exporter);
+```
+
+**Metrics.** `handle.snapshot()` gives cumulative totals whenever you want
+them. When an exporter needs **per-command labels** or **frame-size
+distributions**, install a `MetricsObserver` instead of sampling: it is called
+at the same point the built-in counters record — after the successful socket
+write — so the two can never disagree, and there is no sampler task and no
+staleness. It is `None` by default and costs nothing unset.
+
+**Observing and shutting down at once.** `stop()` takes `&self`, and
+`handle.metrics()` hands out a cheap clonable reader, so an exporter task and
+graceful shutdown can coexist:
+
+```rust
+let handle = Arc::new(handle);
+spawn_exporter(handle.metrics());   // reader only, no lifecycle
+// …later, still graceful — drains in-flight requests:
+handle.stop().await;
+```
+
 ## Configuration
 
 One standard, no per-product profiles. An application supplies its identity and

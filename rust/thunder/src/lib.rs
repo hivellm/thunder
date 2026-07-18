@@ -47,6 +47,6 @@ pub mod server;
 #[cfg(feature = "server")]
 pub use server::{
     format_bracket_code, format_err, spawn_listener, AuthError, Dispatch, ListenerConfig,
-    ListenerHandle, MetricsSnapshot, Principal, PushClosed, PushSender, ServerInfo, Session,
-    NOAUTH, NOPERM, WRONGPASS,
+    ListenerHandle, MetricsObserver, MetricsRef, MetricsSnapshot, Principal, PushClosed,
+    PushSender, ServerInfo, Session, NOAUTH, NOPERM, WRONGPASS,
 };

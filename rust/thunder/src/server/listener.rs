@@ -13,7 +13,7 @@
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::wire::config::{Config, ErrorConvention, Handshake, HelloStyle, PushPolicy};
@@ -25,7 +25,13 @@ use tokio::sync::{mpsc, watch, Semaphore};
 use crate::server::dispatch::{AuthError, Credentials, Dispatch};
 use crate::server::errors::{format_bracket_code, format_err, NOAUTH, WRONGPASS};
 use crate::server::metrics::{Metrics, MetricsSnapshot};
+use crate::server::observer::MetricsObserver;
 use crate::server::session::{PushSender, Session, WriteJob};
+
+/// Ride through a poisoned lock: the guarded state stays consistent.
+fn lock<T>(mutex: &StdMutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Wire protocol version advertised in HELLO replies (WIRE-004: v1,
 /// frozen — adding commands or profiles never bumps it).
@@ -48,7 +54,7 @@ pub struct ServerInfo {
 
 /// Listener configuration. Family posture keeps binds loopback/private by
 /// default (SRV-040 guidance).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ListenerConfig {
     /// Address to bind. Port `0` picks an ephemeral port — read it back
     /// via [`ListenerHandle::local_addr`].
@@ -77,6 +83,30 @@ pub struct ListenerConfig {
     /// `tls` feature — a listener configured with TLS but built without it fails
     /// to start rather than silently serving plaintext.
     pub tls: Option<crate::tls::ServerTls>,
+    /// Maximum concurrently open connections; further accepts are **refused**.
+    /// `0` (the default) means unbounded.
+    ///
+    /// This is a different resource from [`Config::max_in_flight`], which
+    /// bounds in-flight *requests per connection*: ten thousand idle
+    /// connections each hold a reader task, a writer task and a `BufWriter`
+    /// no matter what `max_in_flight` says. Operators bound memory and
+    /// slow-loris exposure with *this* knob — Synap's `network.max_connections`
+    /// is exactly it.
+    ///
+    /// **Refusal, not queueing**: at capacity the socket is dropped
+    /// immediately, so a client fails fast instead of hanging on a connection
+    /// nobody will ever read. Each refusal increments
+    /// [`MetricsSnapshot::connections_refused_total`], so a ceiling that is
+    /// engaging is visible rather than silent.
+    pub max_connections: usize,
+    /// Optional per-command observer (SRV-030 extension).
+    ///
+    /// `None` (the default) keeps today's behavior exactly: the built-in
+    /// counters still record, nothing else runs, and the command label is not
+    /// even materialized. Install one when an exporter needs per-command
+    /// dimensions or frame-size distributions that cumulative totals cannot
+    /// reconstruct — see [`MetricsObserver`].
+    pub observer: Option<Arc<dyn MetricsObserver>>,
 }
 
 impl ListenerConfig {
@@ -89,7 +119,22 @@ impl ListenerConfig {
             slow_threshold: Duration::from_millis(1000),
             auth_required: true,
             tls: None,
+            max_connections: 0,
+            observer: None,
         }
+    }
+
+    /// Install a per-command metrics observer (SRV-030 extension).
+    pub fn with_observer(mut self, observer: Arc<dyn MetricsObserver>) -> Self {
+        self.observer = Some(observer);
+        self
+    }
+
+    /// Refuse accepts beyond `max` concurrently open connections (SRV-009
+    /// analog for connection count). `0` restores the unbounded default.
+    pub fn with_max_connections(mut self, max: usize) -> Self {
+        self.max_connections = max;
+        self
     }
 
     /// Turn TLS on for this deployment (SRV-040): the listener wraps every
@@ -110,6 +155,22 @@ impl ListenerConfig {
     }
 }
 
+impl std::fmt::Debug for ListenerConfig {
+    /// Hand-written because `observer` is a trait object: it reports whether
+    /// one is installed rather than requiring `Debug` from every implementor.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ListenerConfig")
+            .field("addr", &self.addr)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("slow_threshold", &self.slow_threshold)
+            .field("auth_required", &self.auth_required)
+            .field("tls", &self.tls)
+            .field("max_connections", &self.max_connections)
+            .field("observer", &self.observer.is_some())
+            .finish()
+    }
+}
+
 impl Default for ListenerConfig {
     /// Loopback on an ephemeral port with the standard defaults.
     fn default() -> Self {
@@ -126,6 +187,10 @@ struct ConnShared<D> {
     slow_threshold: Duration,
     auth_required: bool,
     metrics: Arc<Metrics>,
+    /// Connection ceiling from `ListenerConfig.max_connections`; 0 = unbounded.
+    max_connections: usize,
+    /// Optional per-command observer; `None` on the default path.
+    observer: Option<Arc<dyn MetricsObserver>>,
     /// Built once from `ListenerConfig.tls`; every accepted stream is wrapped
     /// through it before the first frame (SRV-040).
     #[cfg(feature = "tls")]
@@ -143,7 +208,29 @@ pub struct ListenerHandle {
     local_addr: SocketAddr,
     shutdown: watch::Sender<bool>,
     metrics: Arc<Metrics>,
-    done: Option<mpsc::Receiver<()>>,
+    /// Behind a mutex so [`ListenerHandle::stop`] can take `&self`: the
+    /// receiver is consumed by whichever caller stops first, and any later
+    /// caller finds `None` and simply observes the completed shutdown.
+    done: StdMutex<Option<mpsc::Receiver<()>>>,
+}
+
+/// A cheap, clonable reader of a listener's metrics (SRV-030).
+///
+/// Observation is split from lifecycle on purpose: a metrics exporter can hold
+/// one of these while the [`ListenerHandle`] stays wherever shutdown lives.
+/// Before this existed, a product that wanted both had to wrap the handle in an
+/// `Arc` — which made graceful `stop()` unreachable and silently downgraded
+/// shutdown to the fire-and-forget `Drop` path.
+#[derive(Debug, Clone)]
+pub struct MetricsRef {
+    metrics: Arc<Metrics>,
+}
+
+impl MetricsRef {
+    /// Point-in-time metrics (SRV-030).
+    pub fn snapshot(&self) -> MetricsSnapshot {
+        self.metrics.snapshot()
+    }
 }
 
 impl ListenerHandle {
@@ -157,11 +244,29 @@ impl ListenerHandle {
         self.metrics.snapshot()
     }
 
+    /// A clonable metrics reader that does **not** carry lifecycle.
+    ///
+    /// Hand this to an exporter task instead of sharing the handle itself, so
+    /// the handle keeps single ownership and graceful [`stop`](Self::stop)
+    /// stays available.
+    pub fn metrics(&self) -> MetricsRef {
+        MetricsRef {
+            metrics: Arc::clone(&self.metrics),
+        }
+    }
+
     /// Graceful shutdown (SRV-001): stop accepting, let every connection
     /// drain its in-flight responses, and resolve once all of them closed.
-    pub async fn stop(mut self) {
+    ///
+    /// Takes `&self` so an `Arc<ListenerHandle>` can still drain — sharing the
+    /// handle must not cost the graceful path. Calling it twice is safe: the
+    /// second call observes the shutdown the first one completed.
+    pub async fn stop(&self) {
         let _ = self.shutdown.send(true);
-        if let Some(mut done) = self.done.take() {
+        // Take the receiver out under the lock, then await outside it — a
+        // std mutex must never be held across an await point.
+        let receiver = lock(&self.done).take();
+        if let Some(mut done) = receiver {
             // `recv` yields `None` once the accept loop and every
             // connection task dropped their guard senders.
             let _ = done.recv().await;
@@ -217,6 +322,8 @@ pub async fn spawn_listener<D: Dispatch>(
         slow_threshold: config.slow_threshold,
         auth_required: config.auth_required,
         metrics: Arc::clone(&metrics),
+        max_connections: config.max_connections,
+        observer: config.observer.clone(),
         #[cfg(feature = "tls")]
         acceptor,
     });
@@ -227,7 +334,7 @@ pub async fn spawn_listener<D: Dispatch>(
         local_addr,
         shutdown: shutdown_tx,
         metrics,
-        done: Some(done_rx),
+        done: StdMutex::new(Some(done_rx)),
     })
 }
 
@@ -242,6 +349,9 @@ async fn accept_loop<D: Dispatch>(
 ) {
     let mut accept_shutdown = shutdown.clone();
     let mut next_conn_id: u64 = 1;
+    // `None` when unbounded, so the common case costs nothing at all.
+    let limiter =
+        (shared.max_connections > 0).then(|| Arc::new(Semaphore::new(shared.max_connections)));
     loop {
         let accepted = tokio::select! {
             _ = accept_shutdown.wait_for(|stop| *stop) => break,
@@ -250,15 +360,41 @@ async fn accept_loop<D: Dispatch>(
         let Ok((stream, _peer)) = accepted else {
             continue;
         };
+        // At capacity, drop the socket now. Queueing here would leave the
+        // client waiting on a connection nobody is going to read; refusing
+        // lets it fail fast and try elsewhere.
+        let permit = match &limiter {
+            Some(limiter) => match Arc::clone(limiter).try_acquire_owned() {
+                Ok(permit) => Some(permit),
+                Err(_) => {
+                    drop(stream);
+                    shared.metrics.connection_refused();
+                    if let Some(observer) = &shared.observer {
+                        observer.connection_refused();
+                    }
+                    continue;
+                }
+            },
+            None => None,
+        };
         let conn_id = next_conn_id;
         next_conn_id = next_conn_id.wrapping_add(1);
         let ctx = Arc::clone(&shared);
         let conn_shutdown = shutdown.clone();
         let done_guard = done.clone();
         ctx.metrics.connection_opened();
+        if let Some(observer) = &ctx.observer {
+            observer.connection_opened();
+        }
         tokio::spawn(async move {
             handle_connection(stream, &ctx, conn_id, conn_shutdown).await;
             ctx.metrics.connection_closed();
+            if let Some(observer) = &ctx.observer {
+                observer.connection_closed();
+            }
+            // Held for the whole connection: the slot frees here, on every
+            // path out of `handle_connection` including errors.
+            drop(permit);
             drop(done_guard);
         });
     }
@@ -332,6 +468,7 @@ async fn run_connection<D, R, W>(
         rx,
         Arc::clone(&ctx.metrics),
         ctx.slow_threshold,
+        ctx.observer.clone(),
     ));
 
     // SRV-013 / PRO-031: the typed push channel exists only under
@@ -466,6 +603,9 @@ async fn run_connection<D, R, W>(
         let session = Arc::clone(&session);
         let started = Instant::now();
         let Request { id, command, args } = req;
+        // Only materialized when an observer is installed: on the default path
+        // this is `None` and the command name is never copied.
+        let label: Option<Box<str>> = ctx.observer.as_ref().map(|_| command.as_str().into());
         // One dispatch future, owned so it can either finish inline or move to
         // a task — `Box::pin` gives a single 'static Send future for both.
         let mut fut = Box::pin(async move {
@@ -498,7 +638,7 @@ async fn run_connection<D, R, W>(
             Ok(std::task::Poll::Ready(response)) => {
                 drop(fut);
                 drop(permit);
-                if !send_response(&tx, response, in_bytes, started.elapsed()).await {
+                if !send_response(&tx, response, in_bytes, started.elapsed(), label).await {
                     break;
                 }
             }
@@ -511,6 +651,7 @@ async fn run_connection<D, R, W>(
                             response,
                             in_bytes,
                             duration: started.elapsed(),
+                            command: label,
                         })
                         .await;
                     // Released after the send: the drain below can rely on the
@@ -565,7 +706,10 @@ async fn read_next<R: tokio::io::AsyncRead + Unpin>(
 /// dispatch duration). Returns `false` when the writer is gone and the
 /// connection should close.
 async fn send_inline(tx: &mpsc::Sender<WriteJob>, response: Response, in_bytes: usize) -> bool {
-    send_response(tx, response, in_bytes, Duration::ZERO).await
+    // Built-ins carry no label: they are answered by the listener itself, and
+    // an observer that wants them can count `command_completed` for HELLO/AUTH
+    // through the normal path.
+    send_response(tx, response, in_bytes, Duration::ZERO, None).await
 }
 
 /// Enqueue a dispatched response with its measured duration (SRV-030). Used
@@ -576,11 +720,13 @@ async fn send_response(
     response: Response,
     in_bytes: usize,
     duration: Duration,
+    command: Option<Box<str>>,
 ) -> bool {
     tx.send(WriteJob::Response {
         response,
         in_bytes,
         duration,
+        command,
     })
     .await
     .is_ok()
@@ -595,13 +741,30 @@ async fn writer_task<W: tokio::io::AsyncWrite + Unpin>(
     mut rx: mpsc::Receiver<WriteJob>,
     metrics: Arc<Metrics>,
     slow_threshold: Duration,
+    observer: Option<Arc<dyn MetricsObserver>>,
 ) {
     'outer: while let Some(job) = rx.recv().await {
-        if !write_job(&mut writer, job, &metrics, slow_threshold).await {
+        if !write_job(
+            &mut writer,
+            job,
+            &metrics,
+            slow_threshold,
+            observer.as_ref(),
+        )
+        .await
+        {
             break;
         }
         while let Ok(job) = rx.try_recv() {
-            if !write_job(&mut writer, job, &metrics, slow_threshold).await {
+            if !write_job(
+                &mut writer,
+                job,
+                &metrics,
+                slow_threshold,
+                observer.as_ref(),
+            )
+            .await
+            {
                 break 'outer;
             }
         }
@@ -621,8 +784,9 @@ async fn write_job<W: tokio::io::AsyncWrite + Unpin>(
     job: WriteJob,
     metrics: &Metrics,
     slow_threshold: Duration,
+    observer: Option<&Arc<dyn MetricsObserver>>,
 ) -> bool {
-    let (response, in_bytes, duration) = match job {
+    let (response, in_bytes, duration, command) = match job {
         WriteJob::Shutdown => return false,
         WriteJob::Push(response) => {
             let Ok(frame) = encode_frame(&response) else {
@@ -632,13 +796,17 @@ async fn write_job<W: tokio::io::AsyncWrite + Unpin>(
                 return false;
             }
             metrics.record_push(frame.len());
+            if let Some(observer) = observer {
+                observer.push_emitted(frame.len());
+            }
             return true;
         }
         WriteJob::Response {
             response,
             in_bytes,
             duration,
-        } => (response, in_bytes, duration),
+            command,
+        } => (response, in_bytes, duration, command),
     };
     let is_error = response.result.is_err();
     // SRV-007: the one serialization — this buffer is written and its
@@ -651,8 +819,19 @@ async fn write_job<W: tokio::io::AsyncWrite + Unpin>(
     if writer.write_all(&frame).await.is_err() {
         return false;
     }
-    // SRV-030: metrics record after the successful socket write.
+    // SRV-030: metrics record after the successful socket write. The observer
+    // is called at the same point and with the same values, so the two can
+    // never disagree about what a command cost.
     metrics.record_command(in_bytes, frame.len(), duration, is_error, slow_threshold);
+    if let Some(observer) = observer {
+        observer.command_completed(
+            command.as_deref().unwrap_or(""),
+            in_bytes,
+            frame.len(),
+            duration,
+            is_error,
+        );
+    }
     true
 }
 

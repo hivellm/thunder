@@ -3,17 +3,23 @@ name: Release
 # PKG-011: one release train — every registry publishes from ONE tag, in
 # lockstep. Until this existed, releasing meant running four publish commands by
 # hand, which is how a PyPI/NuGet token ends up living in a product repo. No
-# credential belongs in a repository; the two below live in GitHub's secret
+# credential belongs in a repository; the ones below live in GitHub's secret
 # store, and PyPI needs no credential at all (see the pypi job).
 #
 # Trigger: push a tag `v<semver>` matching the version in the manifests.
-#   git tag v0.1.0 && git push origin v0.1.0
+#   git tag v0.1.1 && git push origin v0.1.1
 #
 # The gate runs first and every publish job needs it (PKG-002's order applies to
 # releases too): nothing reaches a registry that has not passed fmt/lint/tests
 # on the tagged commit. A registry publish cannot be undone — crates.io and npm
 # do not delete, PyPI will not let a version be reused, NuGet only unlists — so
 # the gate is the last place a mistake is still cheap.
+#
+# Two lanes publish outside this file, each for its own reason:
+#   - Go   — releases from a VCS module tag, so there is nothing to push.
+#   - npm  — the @hivehub org requires an OTP on publish, which no stored
+#            credential can provide. Published by hand; see the note below.
+# Both are still gated: the gate runs their checks on the tagged commit.
 
 on:
   push:
@@ -115,29 +121,26 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p thunder-rpc
 
-  npm:
-    name: npm (@hivehub/thunder)
-    needs: gate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # provenance attestation, not a credential
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-      - working-directory: typescript
-        run: npm ci
-      # --provenance signs the package with this workflow's OIDC identity, so
-      # consumers can verify it was built here from this tag rather than on
-      # someone's laptop.
-      - name: Publish
-        working-directory: typescript
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+  # npm has NO publish job, deliberately.
+  #
+  # The @hivehub org requires a one-time password on publish, and an OTP is a
+  # human step by design — no token stored in GitHub's secret store can satisfy
+  # it. A job that cannot authenticate would fail every release and train people
+  # to ignore a red release run, which is worse than no job at all.
+  #
+  # So @hivehub/thunder is published by hand, from the tagged commit:
+  #
+  #   cd typescript && npm publish --access public
+  #
+  # What the train still guarantees for the npm package: the gate above runs
+  # typecheck, lint and tests on the tagged commit, and the tag-vs-manifest
+  # check still verifies typescript/package.json — so a hand publish cannot ship
+  # a version the tag disagrees with, and cannot ship a red commit.
+  #
+  # (This costs the provenance attestation `--provenance` gave, which requires
+  # the workflow's OIDC identity. If npm ever supports automation tokens that
+  # bypass OTP for this org, restore the job rather than keep publishing by
+  # hand.)
 
   pypi:
     name: PyPI (hivellm-thunder)

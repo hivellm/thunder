@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>interop-probe</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The local (uncommitted) library, not the published package. -->
+    <ProjectReference Include="../HiveLLM.Thunder/HiveLLM.Thunder.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 
 namespace HiveLLM.Thunder.Tests;
 
@@ -27,6 +29,24 @@ internal sealed class MockServer : IDisposable
     internal async Task<ServerConn> AcceptAsync() =>
         new(await _listener.AcceptTcpClientAsync());
 
+    /// <summary>
+    /// Accept one connection and serve it over TLS: wrap the accepted stream in
+    /// a server <see cref="SslStream"/> and authenticate with
+    /// <paramref name="serverCertificate"/> (SPEC-008 CAN-020). No client auth,
+    /// mirroring the Rust server (mTLS is a later, additive capability).
+    /// </summary>
+    internal async Task<ServerConn> AcceptTlsAsync(X509Certificate2 serverCertificate)
+    {
+        var tcp = await _listener.AcceptTcpClientAsync();
+        var ssl = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false);
+        await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+        {
+            ServerCertificate = serverCertificate,
+            ClientCertificateRequired = false,
+        });
+        return new ServerConn(tcp, ssl);
+    }
+
     public void Dispose() => _listener.Stop();
 }
 
@@ -34,14 +54,20 @@ internal sealed class MockServer : IDisposable
 internal sealed class ServerConn : IDisposable
 {
     private readonly TcpClient _tcp;
-    private readonly NetworkStream _stream;
+    private readonly Stream _stream;
     private byte[] _buffer = new byte[4096];
     private int _buffered;
 
     internal ServerConn(TcpClient tcp)
+        : this(tcp, tcp.GetStream())
+    {
+    }
+
+    /// <summary>Serve over an already-established stream (a plaintext <see cref="NetworkStream"/> or a TLS <see cref="SslStream"/>).</summary>
+    internal ServerConn(TcpClient tcp, Stream stream)
     {
         _tcp = tcp;
-        _stream = tcp.GetStream();
+        _stream = stream;
     }
 
     /// <summary>Read one request frame (frame-accumulating decode).</summary>

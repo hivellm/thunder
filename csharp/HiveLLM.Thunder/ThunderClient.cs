@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 
 namespace HiveLLM.Thunder;
 
@@ -292,6 +294,14 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     public long UnknownResponseDrops => Interlocked.Read(ref _unknownDrops);
 
     /// <summary>
+    /// True while the current connection is live — not poisoned (CLT-014) and
+    /// not closed (CLT-004). The optional pool (CLT-080) uses this to drop a
+    /// dead connection instead of handing it back; ordinary callers rely on
+    /// typed call errors and lazy reconnect (CLT-030) rather than polling this.
+    /// </summary>
+    public bool IsAlive => CurrentConn() is { IsAlive: true };
+
+    /// <summary>
     /// The application's protocol config this client drives its behavior from
     /// (PRO-001) — not to be confused with <see cref="ClientConfig"/>.
     /// </summary>
@@ -420,26 +430,38 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     private async Task<Conn> EstablishAsync(CancellationToken cancellationToken)
     {
         var tcp = new TcpClient();
+        Stream stream;
         try
         {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(_clientConfig.ConnectTimeout);
-            try
+            using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
-                await tcp.ConnectAsync(_endpoint.Host, _endpoint.Port, timeoutCts.Token)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new ThunderTimeoutException();
-            }
-            catch (Exception e) when (e is SocketException or IOException)
-            {
-                throw new ThunderConnectionException(
-                    $"connect to {_endpoint.Host}:{_endpoint.Port} failed: {e.Message}", e);
+                timeoutCts.CancelAfter(_clientConfig.ConnectTimeout);
+                try
+                {
+                    await tcp.ConnectAsync(_endpoint.Host, _endpoint.Port, timeoutCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new ThunderTimeoutException();
+                }
+                catch (Exception e) when (e is SocketException or IOException)
+                {
+                    throw new ThunderConnectionException(
+                        $"connect to {_endpoint.Host}:{_endpoint.Port} failed: {e.Message}", e);
+                }
+
+                tcp.NoDelay = true; // CLT-001
             }
 
-            tcp.NoDelay = true; // CLT-001
+            // CLT-001 / FR-29: when TLS is configured, complete the TLS
+            // handshake before any Thunder frame; a TLS setup / handshake /
+            // verification failure is the Connection class, exactly like a
+            // plaintext dial failure. The plaintext path keeps the bare
+            // NetworkStream and is byte-for-byte unchanged.
+            stream = _clientConfig.Tls is { } tlsConfig
+                ? await AuthenticateTlsAsync(tcp, tlsConfig, cancellationToken).ConfigureAwait(false)
+                : tcp.GetStream();
         }
         catch
         {
@@ -447,7 +469,7 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
             throw;
         }
 
-        var conn = new Conn(tcp);
+        var conn = new Conn(tcp, stream);
         _ = Task.Run(() => ReaderLoopAsync(conn), CancellationToken.None);
         try
         {
@@ -465,6 +487,115 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
             // its own class (auth stays auth, transport stays connection).
             conn.Kill(new ThunderConnectionException("handshake failed"));
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Wrap the connected socket in a client <see cref="SslStream"/> and
+    /// authenticate before any Thunder frame (FR-29). Verification is against
+    /// <see cref="ClientTls.CaPath"/> when set (a custom validation callback
+    /// pinning exactly those roots), else the platform's system trust. Every
+    /// TLS setup / handshake / verification failure surfaces as
+    /// <see cref="ThunderConnectionException"/>, never a silent plaintext
+    /// downgrade.
+    /// </summary>
+    private async Task<SslStream> AuthenticateTlsAsync(
+        TcpClient tcp,
+        ClientTls tls,
+        CancellationToken cancellationToken)
+    {
+        // The SNI / verification name: the configured ServerName, else the host.
+        var targetHost = tls.ServerName ?? _endpoint.Host;
+
+        RemoteCertificateValidationCallback? validation = null;
+        if (tls.CaPath is not null)
+        {
+            var trusted = new X509Certificate2Collection();
+            try
+            {
+                trusted.ImportFromPemFile(tls.CaPath);
+            }
+            catch (Exception e)
+            {
+                throw new ThunderConnectionException($"TLS setup failed: {e.Message}", e);
+            }
+
+            if (trusted.Count == 0)
+            {
+                throw new ThunderConnectionException(
+                    $"TLS setup failed: no certificates in CA file '{tls.CaPath}'");
+            }
+
+            // Pin exactly the configured root(s): the server certificate must
+            // chain to one of them, and its name must match (FR-29).
+            validation = (_, certificate, _, sslPolicyErrors) =>
+                VerifyPinnedCertificate(certificate, sslPolicyErrors, trusted);
+        }
+
+        var sslStream = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false, validation);
+        try
+        {
+            await sslStream.AuthenticateAsClientAsync(
+                    new SslClientAuthenticationOptions { TargetHost = targetHost },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await sslStream.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception e)
+        {
+            await sslStream.DisposeAsync().ConfigureAwait(false);
+            throw new ThunderConnectionException($"TLS handshake failed: {e.Message}", e);
+        }
+
+        return sslStream;
+    }
+
+    /// <summary>
+    /// Validate the server certificate against the pinned root(s): reject a
+    /// name mismatch outright, then rebuild the chain trusting only the
+    /// configured CA(s) — the system trust store plays no part (FR-29).
+    /// </summary>
+    private static bool VerifyPinnedCertificate(
+        X509Certificate? certificate,
+        SslPolicyErrors sslPolicyErrors,
+        X509Certificate2Collection trustedRoots)
+    {
+        if (certificate is null)
+        {
+            return false;
+        }
+
+        // The name check is the platform's; a mismatch is never acceptable. The
+        // untrusted-root error is expected here and re-evaluated against the
+        // pinned store below.
+        if ((sslPolicyErrors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0)
+        {
+            return false;
+        }
+
+        X509Certificate2? created = null;
+        var serverCert = certificate as X509Certificate2;
+        if (serverCert is null)
+        {
+            serverCert = new X509Certificate2(certificate);
+            created = serverCert;
+        }
+
+        try
+        {
+            using var chain = new X509Chain();
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            chain.ChainPolicy.CustomTrustStore.AddRange(trustedRoots);
+            return chain.Build(serverCert);
+        }
+        finally
+        {
+            created?.Dispose();
         }
     }
 
@@ -764,15 +895,20 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
     {
         private int _alive = 1;
 
-        internal Conn(TcpClient tcp)
+        internal Conn(TcpClient tcp, Stream stream)
         {
             Tcp = tcp;
-            Stream = tcp.GetStream();
+            Stream = stream;
         }
 
         internal TcpClient Tcp { get; }
 
-        internal NetworkStream Stream { get; }
+        /// <summary>
+        /// The transport the reader/writer see: a bare <see cref="NetworkStream"/>
+        /// on the plaintext path, or an <see cref="SslStream"/> wrapping it under
+        /// TLS (FR-29). Neither the codec nor the demux sees the difference.
+        /// </summary>
+        internal Stream Stream { get; }
 
         /// <summary>
         /// Writes serialize behind this semaphore so frames never interleave
@@ -805,6 +941,17 @@ public sealed class ThunderClient : IDisposable, IAsyncDisposable
         internal void Kill(ThunderException error)
         {
             Poison(error);
+            try
+            {
+                // Disposing the stream also tears down an SslStream's TLS state;
+                // closing the socket breaks any read/write in flight.
+                Stream.Dispose();
+            }
+            catch
+            {
+                // Best-effort close.
+            }
+
             try
             {
                 Tcp.Close();

@@ -78,6 +78,39 @@ public sealed record ClientConfig
 
     /// <summary>Client identifier sent in the <c>HELLO</c> map (HelloMandatory). Default <c>thunder-client</c>.</summary>
     public string? ClientName { get; init; }
+
+    /// <summary>
+    /// Optional client TLS (FR-29 / SPEC-008 CAN-020), <b>off by default</b>.
+    /// Non-null makes the client complete a
+    /// <see cref="System.Net.Security.SslStream"/> handshake before any Thunder
+    /// frame; null keeps plaintext, the default path, entirely unchanged. There
+    /// is no STARTTLS — TLS is decided at connect time. A TLS setup, handshake
+    /// or certificate-verification failure classifies as
+    /// <see cref="ThunderConnectionException"/>, exactly like a plaintext
+    /// connect failure.
+    /// </summary>
+    public ClientTls? Tls { get; init; }
+}
+
+/// <summary>
+/// Client-side TLS material (FR-29 / SPEC-008 CAN-020). Presence of this on
+/// <see cref="ClientConfig.Tls"/> makes the client dial TLS; absence keeps it
+/// plaintext (the default). Mirrors the Rust <c>ClientTls</c> — plain data that
+/// always compiles regardless of whether TLS is used.
+/// </summary>
+public sealed record ClientTls
+{
+    /// <summary>
+    /// Name to verify the server certificate against (the TLS target host /
+    /// SNI). When null, the endpoint host is used.
+    /// </summary>
+    public string? ServerName { get; init; }
+
+    /// <summary>
+    /// Path to a PEM file of trusted root(s) to pin. When null, the platform's
+    /// native root store is used.
+    /// </summary>
+    public string? CaPath { get; init; }
 }
 
 /// <summary>What the handshake learned about this connection (CLT-002).</summary>

@@ -22,9 +22,16 @@ enforcement) is Thunder's.
 - **SRV-002** [P0] Per connection: the socket is split; a dedicated **writer task** owns the write
   half behind an mpsc channel so concurrent handlers complete out of order while frames serialize
   correctly on the wire (the family's proven shape).
-- **SRV-003** [P0] The read loop decodes frames with the profile's cap (WIRE-020) and spawns one
-  dispatch task per request, bounded by a per-connection `Semaphore` sized by the profile's
-  `max_in_flight`. Excess requests wait; they are not refused.
+- **SRV-003** [P0] The read loop decodes frames with the profile's cap (WIRE-020) and runs one
+  dispatch per request, bounded by a per-connection `Semaphore` sized by the profile's
+  `max_in_flight`. Excess requests wait; they are not refused. **Poll-once fast path:** the
+  dispatch future is polled once on the read loop; a handler that resolves without suspending
+  (a cache hit, an in-memory read) is answered inline with no task, while a handler that suspends
+  on real I/O returns `Pending` and is moved to a task — so a slow command still never
+  head-of-line blocks its connection (SRV-004), and the small-payload/high-concurrency throughput
+  that the per-request spawn cost dominated is recovered (measured +76% on point-echo depth16/4conns).
+  The bound holds on both paths (the permit is taken before the poll), and a synchronous handler
+  panic is caught and isolated exactly as the runtime isolates a spawned task's panic (SRV-005).
 - **SRV-004** [P0] EOF or decode error ends the read loop; dropping the channel drains the writer.
   A malformed frame closes that connection only — never the listener.
 - **SRV-005** [P0] Unknown commands return the profile's error convention and MUST leave the

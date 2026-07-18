@@ -52,7 +52,7 @@ are simply capabilities a single-channel pub/sub never needed:
 - **PUSH-007** — **No event type.** Every frame is an undistinguished `Ok(Value)`. A
   consumer cannot tell a data event from a progress tick from a terminal error without
   the product baking a discriminator into its own payload — i.e. each product
-  reinvents one. That reinvention is the drift this design exists to pre-empt.
+  reinvents one. That reinvention is the drift this design exists to preempt.
 - **PUSH-008** — **No subscription correlation.** All frames on a connection share the
   one id `PUSH_ID`. With two concurrent subscriptions on one connection there is no
   wire-level way to say which frame belongs to which — Synap's single-subscription

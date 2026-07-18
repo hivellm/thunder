@@ -104,9 +104,7 @@ class Pool:
                     candidate.close()
             if reused is not None:
                 return reused
-            return Client.connect(
-                self._endpoint, self._config, self._client_config
-            )
+            return Client.connect(self._endpoint, self._config, self._client_config)
         except BaseException:
             self._permits.release()
             raise

@@ -64,9 +64,7 @@ def hello_config() -> Config:
 def _hello_ok(conn) -> None:
     hello = conn.read_request()
     assert hello.command == "HELLO"
-    conn.send_ok(
-        hello.id, Value.map([(Value.str("authenticated"), Value.bool(True))])
-    )
+    conn.send_ok(hello.id, Value.map([(Value.str("authenticated"), Value.bool(True))]))
 
 
 # -- sync --------------------------------------------------------------------
@@ -186,9 +184,7 @@ async def test_checkout_returns_the_connection_for_reuse_async() -> None:
         conn.send_ok(req.id, Value.str("PONG"))
 
     with MockServer(script) as srv:
-        pool = AsyncPool(
-            srv.address, plain_config(), ClientConfig(), max_connections=4
-        )
+        pool = AsyncPool(srv.address, plain_config(), ClientConfig(), max_connections=4)
         assert pool.idle_count() == 0, "construction dials nothing"
         async with pool.acquire() as client:
             assert (await client.call("PING")).as_str() == "PONG"
@@ -226,9 +222,7 @@ async def test_pool_never_exceeds_max_connections_async() -> None:
         c1.send_ok(req.id, Value.str("PONG"))
 
     with MockServer(script) as srv:
-        pool = AsyncPool(
-            srv.address, plain_config(), ClientConfig(), max_connections=2
-        )
+        pool = AsyncPool(srv.address, plain_config(), ClientConfig(), max_connections=2)
 
         g1 = pool.acquire()
         await g1.__aenter__()
@@ -262,9 +256,7 @@ async def test_a_poisoned_connection_is_not_handed_to_the_next_caller_async() ->
         conn2.send_ok(req2.id, Value.str("PONG"))
 
     with MockServer(script) as srv:
-        pool = AsyncPool(
-            srv.address, plain_config(), ClientConfig(), max_connections=4
-        )
+        pool = AsyncPool(srv.address, plain_config(), ClientConfig(), max_connections=4)
 
         async with pool.acquire() as client:
             assert (await client.call("PING")).as_str() == "PONG"

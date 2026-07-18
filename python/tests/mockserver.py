@@ -51,6 +51,7 @@ def self_signed_cert(common_name: str = "localhost") -> tuple[bytes, bytes]:
     )
     return cert_pem, key_pem
 
+
 #: Frame cap the loopback responders read with.
 SRV_CAP = 1024 * 1024
 

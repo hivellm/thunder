@@ -121,9 +121,9 @@ async def test_five_pipelined_calls_complete_in_permuted_order() -> None:
         # Each call returns the value carrying ITS OWN command, whatever
         # order the server chose to answer in.
         for command, result in zip(commands, results):
-            assert result.as_str() == command, (
-                f"call {command} resolved with another call's reply"
-            )
+            assert (
+                result.as_str() == command
+            ), f"call {command} resolved with another call's reply"
         await client.close()
 
 
@@ -358,9 +358,9 @@ async def test_connect_timeout_fires_as_typed_timeout() -> None:
             plain_config(),
             ClientConfig(connect_timeout=0.15),
         )
-    assert loop.time() - started >= 0.15, (
-        "the dial must be given the full connect timeout before failing"
-    )
+    assert (
+        loop.time() - started >= 0.15
+    ), "the dial must be given the full connect timeout before failing"
 
 
 async def test_per_call_timeout_fires_and_late_response_is_dropped() -> None:
@@ -448,9 +448,7 @@ async def test_successful_reconnect_replays_the_handshake_before_pending_traffic
             request = conn.read_request()
             seen.append(request.command)
             reply = (
-                hello_ok_reply()
-                if request.command == "HELLO"
-                else Value.str("second")
+                hello_ok_reply() if request.command == "HELLO" else Value.str("second")
             )
             conn.send_ok(request.id, reply)
 
@@ -522,7 +520,9 @@ async def test_resp3_error_mapping_over_the_wire() -> None:
         # table pins the parser, this pins it end-to-end over a socket.
         with pytest.raises(errors.AuthError) as wrongpass_info:
             await client.call("AUTH")
-        assert wrongpass_info.value.message == "WRONGPASS invalid username-password pair"
+        assert (
+            wrongpass_info.value.message == "WRONGPASS invalid username-password pair"
+        )
         with pytest.raises(errors.ServerError) as server_info:
             await client.call("FOO")
         assert server_info.value.message == "ERR unknown command 'FOO'"
@@ -553,7 +553,9 @@ async def test_bracket_error_mapping_over_the_wire() -> None:
         # the wire rather than falling through to the server class.
         with pytest.raises(errors.AuthError) as wrongpass_info:
             await client.call("AUTH")
-        assert wrongpass_info.value.message == "WRONGPASS invalid username-password pair"
+        assert (
+            wrongpass_info.value.message == "WRONGPASS invalid username-password pair"
+        )
         await client.close()
 
 

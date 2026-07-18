@@ -35,6 +35,7 @@ thrift = "0.24"
 capnp = "0.26"
 capnp-rpc = "0.26"
 tokio-util = { version = "0.7.18", features = ["compat"] }
+async-nats = "0.49.1"
 
 [lints]
 workspace = true

@@ -1,0 +1,146 @@
+# Behavioral floor scenarios (CLT-090, SPEC-003 §9) — the language-neutral
+# source of record for the four client suites. Unlike conformance/vectors/
+# (which pin BYTES), this pins BEHAVIOR: for each scenario, what the scripted
+# counterpart server does and what the client must then do.
+#
+# Every language ships a scripted counterpart harness that enacts these — the
+# "reusable scripted server" of CLT-090 — driving one Thunder client over a real
+# loopback socket:
+#   - Rust:       rust/thunder/tests/behavior.rs (+ oversize_alloc.rs)
+#   - TypeScript: typescript/tests/mock-server.ts driven by behavior.test.ts
+#   - Python:     python/tests/mockserver.py driven by test_client_{sync,async}.py
+#   - C#:         csharp/HiveLLM.Thunder.Tests/MockServer.cs driven by BehaviorTests.cs
+#
+# A scenario passes or the port does not ship (green ×4 is gate G4). Each row
+# names the test function per language so the table and the suites stay in lockstep.
+# `languages` lists where it runs; `rust-only` marks the one probe that only the
+# Rust client can express (it is the only client that pre-sizes a body buffer).
+
+schema: thunder/behavioral-scenarios-v1
+
+scenarios:
+  - name: pipelined-out-of-order
+    covers: [CLT-010, CLT-011]
+    server: read N requests before answering any, then answer in an order that is
+      neither submission order nor its reverse
+    client: every pending call resolves with the value carrying ITS OWN id's reply
+    languages: [rust, typescript, python, csharp]
+
+  - name: in-flight-backpressure
+    covers: [CLT-012]
+    server: strictly serial — answer one request before the next is read
+    client: with max_in_flight = 1 the second call waits for the permit; it is never
+      refused, and its frame is not even written until the first completes
+    languages: [rust, typescript, python, csharp]
+
+  - name: unknown-id-drop
+    covers: [CLT-013]
+    server: send a response for an id the client never sent, then the real reply
+    client: the stray response is discarded (unknown_response_drops += 1), the real
+      call resolves, the connection stays healthy
+    languages: [rust, typescript, python, csharp]
+
+  - name: connect-timeout
+    covers: [CLT-001]
+    server: none — dial an unroutable address (TEST-NET-1 192.0.2.1:9) whose SYN is
+      dropped, so the dial hangs
+    client: the dial fails as the timeout class at the configured connect deadline,
+      not the connection class and not a hang
+    languages: [rust, typescript, python, csharp]
+
+  - name: call-timeout
+    covers: [CLT-020]
+    server: withhold the reply until a later request proves the timeout fired, then
+      deliver the late reply first
+    client: the call fails as the timeout class; the late reply becomes an unknown-id
+      drop and the connection lives on
+    languages: [rust, typescript, python, csharp]
+
+  - name: reconnect-give-up
+    covers: [CLT-030]
+    server: serve one call then drop; refuse the next two re-dials
+    client: after exactly two re-dial attempts (initial + 2) the call fails as the
+      connection class
+    languages: [rust, typescript, python, csharp]
+
+  - name: reconnect-replays-handshake
+    covers: [CLT-030, CLT-002]
+    server: under a mandatory-HELLO profile, drop after one call; on the re-dial,
+      record the frames received
+    client: the re-dialed connection replays the profile HELLO before the pending
+      call — the server sees exactly [HELLO, <call>]
+    languages: [rust, typescript, python, csharp]
+
+  - name: oversize-frame-refused
+    covers: [CLT-014, WIRE-020]
+    server: send a length prefix past the profile cap
+    client: the call fails as the frame-too-large class and the connection is poisoned
+      (a fresh call reconnects and succeeds)
+    languages: [rust, typescript, python, csharp]
+
+  - name: oversize-no-allocation
+    covers: [WIRE-020]
+    server: send only a prefix declaring 512 MiB, no body
+    client: refuses on the prefix WITHOUT allocating the body (a counting allocator
+      confirms < 8 MiB is allocated)
+    languages: [rust]
+    rust-only: true  # only the Rust client pre-sizes a body buffer from the prefix
+
+  - name: malformed-frame-poison
+    covers: [CLT-014]
+    server: send a valid length prefix followed by never-valid MessagePack (0xc1)
+    client: the call fails as the decode class and the connection is poisoned
+    languages: [rust, typescript, python, csharp]
+
+  - name: push-reserved-poisons
+    covers: [CLT-060]
+    server: under push = Reserved, inject a PUSH_ID frame
+    client: receiving it is a protocol error that poisons the connection
+    languages: [rust, typescript, python, csharp]
+
+  - name: push-enabled-delivers
+    covers: [CLT-060]
+    server: under push = Enabled, inject a PUSH_ID frame carrying a value
+    client: the decoded value reaches the registered push hook; it is not matched
+      against any pending call
+    languages: [rust, typescript, python, csharp]
+
+  - name: error-noauth-over-the-wire
+    covers: [CLT-051]
+    server: reply with the error string "NOAUTH ..."
+    client: classifies it as the auth class (regardless of the error convention)
+    languages: [rust, typescript, python, csharp]
+
+  - name: error-wrongpass-over-the-wire
+    covers: [CLT-051]
+    server: reply with "WRONGPASS ..." under BOTH the RESP3-prefix and the
+      bracket-code conventions
+    client: classifies it as the auth class under either convention
+    languages: [rust, typescript, python, csharp]
+
+  - name: error-noperm-over-the-wire
+    covers: [CLT-051]
+    server: reply with "NOPERM ..."
+    client: classifies it as the auth class (authorization refusal, same recourse)
+    languages: [rust, typescript, python, csharp]
+
+  - name: error-bracket-code-over-the-wire
+    covers: [CLT-050]
+    server: reply with "[collection_not_found] no such collection: docs"
+    client: extracts code = "collection_not_found" and keeps the raw message; class
+      is server, not auth
+    languages: [rust, typescript, python, csharp]
+
+# Live interop smoke (TST-050) is a separate, env-gated path — see
+# behavioral-scenarios-live below and the per-language live_smoke tests. It runs
+# only against real product instances (THUNDER_LIVE_URL_SYNAP/NEXUS/VECTORIZER)
+# and is skipped otherwise, so it is not part of the always-on floor above.
+live:
+  env: [THUNDER_LIVE_URL_SYNAP, THUNDER_LIVE_URL_NEXUS, THUNDER_LIVE_URL_VECTORIZER]
+  per_product_shape:
+    # Deployment shapes from the BN-023 errata (product SOURCE is the truth, not
+    # the product's own docs). None of the three run RPC TLS today.
+    synap: { handshake: auth_command, hello_style: not_used, error_codes: resp3_prefixes }
+    nexus: { handshake: auth_command, hello_style: arg_less, error_codes: resp3_prefixes }
+    vectorizer: { handshake: hello_mandatory, hello_style: map_payload, error_codes: bracket_code }
+  steps: [connect, handshake per shape, a PING-class call, one typed-error call, clean close]

@@ -57,3 +57,24 @@ per-product registry legitimately provided.
 
 `scheme` and `default_port` are deliberately absent: identity is the application's. An application
 starts from the standard and overrides only what it diverges on, in its own repository (PRO-020/021).
+
+## `behavioral-scenarios.yaml` — the behavioral floor as data (CLT-090, SPEC-003 §9)
+
+Where `vectors/` pins **bytes**, this pins **behavior**: for each behavioral-floor scenario, what the
+scripted counterpart server does and what the client must then do (timeouts, reconnect + handshake
+replay, oversize/malformed poisoning, push routing, error classification, pipelined demux). It is the
+language-neutral source of record that the four client suites implement scenario-for-scenario.
+
+Each language ships its own **scripted counterpart harness** — the CLT-090 "reusable scripted server"
+in that language — driving one Thunder client over a real loopback socket:
+
+| Language | Harness | Suite |
+|---|---|---|
+| Rust | `rust/thunder/tests/behavior.rs` (+ `oversize_alloc.rs`) | same files |
+| TypeScript | `typescript/tests/mock-server.ts` | `behavior.test.ts` |
+| Python | `python/tests/mockserver.py` | `test_client_{sync,async}.py` |
+| C# | `csharp/HiveLLM.Thunder.Tests/MockServer.cs` | `BehaviorTests.cs` |
+
+Green ×4 across these is gate G4. The table's `live:` section documents the separate, env-gated live
+interop smoke (TST-050) — the `live_smoke` test per language, run only against real product instances
+(`THUNDER_LIVE_URL_SYNAP/NEXUS/VECTORIZER`) and skipped otherwise.

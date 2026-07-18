@@ -51,6 +51,7 @@ pub mod backend;
 pub mod bolt;
 pub mod driver;
 pub mod http;
+pub mod memcached;
 pub mod pinning;
 pub mod product_harness;
 pub mod resp3;

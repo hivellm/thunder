@@ -40,6 +40,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use crate::backend::NoopBackend;
 use crate::bolt::{spawn_bolt_listener, BoltHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
+use crate::memcached::{spawn_memcached_listener, McHandle};
 use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
 use crate::stats::{compute, dispersion, CellStats, Dispersion};
@@ -82,6 +83,12 @@ pub enum Lane {
     /// the server's features cost from what the wire costs — see that
     /// module's docs. Excluded from [`Lane::ALL`] on purpose.
     ThunderStripped,
+    /// **Reference, not a G5 lane**: the Memcached binary protocol
+    /// ([`crate::memcached`]) — the leanest FIFO request/response wire, the
+    /// performance ceiling (phase4_shootout-expansion). Measured for breadth,
+    /// not a peer Thunder must beat: it wins by *being* trivial. Excluded from
+    /// [`Lane::ALL`].
+    Memcached,
 }
 
 impl Lane {
@@ -93,22 +100,25 @@ impl Lane {
             Self::Bolt => "bolt",
             Self::Http => "http",
             Self::ThunderStripped => "thunder-stripped",
+            Self::Memcached => "memcached",
         }
     }
 
     /// Every G5 lane, artifact order — Thunder first, then the peers it must
-    /// beat in every cell (BEN-020 / gate G5). `ThunderStripped` is absent by
-    /// design: it is a diagnostic, and a lane Thunder "beats" by dropping its
-    /// own guarantees would be a meaningless win.
+    /// beat in every cell (BEN-020 / gate G5). `ThunderStripped` and the
+    /// expansion reference lanes (Memcached, …) are absent by design: a
+    /// diagnostic, and a performance ceiling, are not peers Thunder "beats".
     pub const ALL: [Lane; 4] = [Lane::Thunder, Lane::Resp3, Lane::Bolt, Lane::Http];
 
-    /// The G5 lanes plus the [`Lane::ThunderStripped`] diagnostic.
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 5] = [
+    /// The G5 lanes plus the diagnostic and reference lanes measured under
+    /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 6] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
         Lane::Http,
         Lane::ThunderStripped,
+        Lane::Memcached,
     ];
 }
 
@@ -196,6 +206,8 @@ pub struct Targets {
     pub http: HttpHandle,
     /// The bare-wire diagnostic listener handle ([`crate::stripped`]).
     pub stripped: StrippedHandle,
+    /// The Memcached-binary reference listener handle ([`crate::memcached`]).
+    pub memcached: McHandle,
 }
 
 impl Targets {
@@ -206,6 +218,7 @@ impl Targets {
         self.bolt.stop().await;
         self.http.stop().await;
         self.stripped.stop().await;
+        self.memcached.stop().await;
     }
 }
 
@@ -227,6 +240,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let resp3 = spawn_resp3_listener(Arc::clone(&backend), loopback).await?;
     let bolt = spawn_bolt_listener(Arc::clone(&backend), loopback).await?;
     let http = spawn_http_listener(Arc::clone(&backend), loopback).await?;
+    let memcached = spawn_memcached_listener(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -234,6 +248,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         bolt,
         http,
         stripped,
+        memcached,
     })
 }
 
@@ -261,6 +276,7 @@ pub async fn run_scenario(
                     thunder_storm_at(&targets.stripped.local_addr().to_string(), storms, cfg)
                         .await?
                 }
+                Lane::Memcached => crate::memcached::storm(&targets.memcached, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -281,6 +297,9 @@ pub async fn run_scenario(
                     Lane::Bolt => crate::bolt::cell(&targets.bolt, &spec, cfg).await?,
                     Lane::Http => http_cell(targets, &spec, cfg).await?,
                     Lane::ThunderStripped => stripped_cell(targets, &spec, cfg).await?,
+                    Lane::Memcached => {
+                        crate::memcached::cell(&targets.memcached, &spec, cfg).await?
+                    }
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

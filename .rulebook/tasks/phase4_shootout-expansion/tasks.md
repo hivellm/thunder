@@ -5,7 +5,8 @@ implementation, wired into Lane::ALL + the matrix runner + Targets. Phased by
 value/cost. Results stay diagnostic until a quiet host produces a citable artifact.
 
 Phase 1 — ceiling & variant (low cost):
-- [ ] 1.1 Memcached binary protocol lane — the leanest possible FIFO peer; defines the performance ceiling (how close Thunder gets to a trivial protocol)
+- [x] 1.1 Memcached binary protocol lane — the leanest possible FIFO peer; defines the performance ceiling (how close Thunder gets to a trivial protocol)
+      — `thunder-bench/src/memcached.rs`: minimal binary listener (one opcode, GET; key carries the workload via STATIC/SINK/PING sentinels, else echoed) + FIFO parity driver (sender+receiver via join!, VecDeque correlation, direct nodelay writes — the lean FIFO shape) + storm. Wired as a **reference** lane (Lane::Memcached in ALL_WITH_DIAGNOSTIC, NOT in Lane::ALL — a ceiling is not a peer Thunder must beat). 7 unit tests (echo/static/ping/sink round-trip, key-as-value, 250-byte cap rejection) green; validated end-to-end over sockets (bytes exact: 64B echo -> in 88/out 92; 4KiB -> in 30/out 4124). Full Rust gate green. Preliminary (allow-noisy, not citable): Thunder is not behind the FIFO ceiling — it wins several cells, e.g. point-echo d1/c1 31.6k vs 18.9k.
 - [ ] 1.2 RESP2 lane — RESP3 minus the v3-only types; near-free given the existing RESP3 lane
 
 Phase 2 — serious binary DB wires:

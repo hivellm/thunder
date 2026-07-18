@@ -69,6 +69,20 @@ tolerated legacy forms are decode-only, forever within 1.x.
 - **WIRE-023** [P0] A malformed body (valid length, garbage MessagePack) SHALL produce a typed
   decode error and MUST NOT panic/throw uncontrolled; the connection-level policy on decode errors
   belongs to SPEC-003/SPEC-004.
+- **WIRE-024** [P0] A frame whose length prefix is **zero** SHALL be a **valid frame carrying no
+  body** — a keep-alive / liveness tick — not a malformed frame.
+  - A **raw** (borrowed-body) decode SHALL return it as an empty body, so a consumer can skip it.
+  - A **typed** decode, which by definition needs a body to deserialize, SHALL reject it with a
+    decode error **distinct from the malformed-body error of WIRE-023**, so callers match on
+    intent rather than on a parse failure.
+  - Emission is not mandated: a peer MAY send zero-length frames as liveness ticks; no peer is
+    required to.
+
+  *Rationale.* This was previously undefined, so each product decided for itself and worked around
+  the others: Fluxum uses zero-length frames as idle liveness on its push stream and had to wrap
+  the TypeScript `FrameReader` to consume them before delegating (GH #6). Defining it once removes
+  the workaround and stops the next product reinventing it. No byte changes — a zero-length frame
+  was always representable; only its *meaning* was missing.
 
 ## 4. Purity
 

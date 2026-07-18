@@ -270,9 +270,16 @@ fn corpus_vectors_hold() {
                         );
                     }
                     Some("decode") => {
+                        // The corpus pins the *observable* behaviour — a typed
+                        // decode rejects the frame — not which typed error a
+                        // given language returns. Since WIRE-024 the
+                        // zero-length case is `KeepAlive` in Rust rather than
+                        // a MessagePack parse failure; it is still rejected,
+                        // which is what the vector asserts and what every
+                        // other language lane still does.
                         assert!(
-                            matches!(err, DecodeError::Rmp(_)),
-                            "{}: expected decode error, got {err:?}",
+                            matches!(err, DecodeError::Rmp(_) | DecodeError::KeepAlive),
+                            "{}: expected a typed decode rejection, got {err:?}",
                             v.name
                         );
                     }

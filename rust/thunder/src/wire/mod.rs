@@ -21,7 +21,9 @@ mod frame;
 mod value;
 
 pub use config::Config;
-pub use frame::{decode_frame, decode_frame_with_limit, encode_frame, DecodeError};
+pub use frame::{
+    decode_frame, decode_frame_raw, decode_frame_with_limit, encode_frame, DecodeError,
+};
 pub use value::{Request, Response, Value};
 
 #[cfg(feature = "tokio")]

@@ -27,6 +27,19 @@ pub enum DecodeError {
     /// Well-formed frame, malformed MessagePack payload (WIRE-023).
     #[error("decode error: {0}")]
     Rmp(#[from] rmp_serde::decode::Error),
+    /// A zero-length frame: a valid **keep-alive** carrying no body
+    /// (WIRE-024), reached through a typed decode that needs one.
+    ///
+    /// Distinct from [`DecodeError::Rmp`] on purpose. A zero-length body
+    /// genuinely cannot be a `Request`/`Response`, but it is not malformed —
+    /// it is a liveness tick a peer deliberately sent. Callers match on the
+    /// intent and skip it; before this variant existed they had to recognize
+    /// it as a parse failure, which is why products wrapped the reader to eat
+    /// zero-length frames before delegating.
+    ///
+    /// [`decode_frame_raw`] returns these as an empty body instead.
+    #[error("zero-length frame (keep-alive), not a message body")]
+    KeepAlive,
 }
 
 /// Encode a message into one complete frame (`u32 LE length` + body).
@@ -50,16 +63,33 @@ pub fn decode_frame<T: for<'de> Deserialize<'de>>(
     decode_frame_with_limit(buf, DEFAULT_MAX_FRAME_BYTES)
 }
 
-/// Decode one frame, rejecting bodies larger than `max` before the body
-/// is even inspected (WIRE-020/021).
-pub fn decode_frame_with_limit<T: for<'de> Deserialize<'de>>(
-    buf: &[u8],
-    max: usize,
-) -> Result<Option<(T, usize)>, DecodeError> {
+/// Decode one frame's **body, borrowed from `buf`**, plus the total bytes
+/// consumed (`4 + body`).
+///
+/// This is the framing layer on its own: the prefix read, the cap check
+/// (WIRE-020/021, before any slicing) and the body slice — with no assumption
+/// about what the body *is*. A product whose frames carry its own envelope
+/// rather than Thunder's `Request`/`Response` reuses the framing through this
+/// instead of reimplementing it, which is the whole point of a shared wire
+/// crate. It is the Rust counterpart of the TypeScript package's
+/// `FrameReader`.
+///
+/// Returns `Ok(None)` when the buffer does not yet hold a complete frame
+/// (read more and retry — WIRE-022).
+///
+/// A zero-length frame is **not** an error here: it comes back as an empty
+/// body slice, which is what lets a raw consumer skip a keep-alive
+/// (WIRE-024).
+///
+/// [`decode_frame_with_limit`] is this function plus a MessagePack decode, so
+/// there is exactly one implementation of the framing rules.
+pub fn decode_frame_raw(buf: &[u8], max: usize) -> Result<Option<(&[u8], usize)>, DecodeError> {
     if buf.len() < 4 {
         return Ok(None);
     }
     let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+    // WIRE-021: judged against the prefix, before the body is sliced or
+    // allocated.
     if len > max {
         return Err(DecodeError::FrameTooLarge { body: len, max });
     }
@@ -67,7 +97,26 @@ pub fn decode_frame_with_limit<T: for<'de> Deserialize<'de>>(
     if buf.len() < total {
         return Ok(None);
     }
-    let value = rmp_serde::from_slice(&buf[4..total])?;
+    Ok(Some((&buf[4..total], total)))
+}
+
+/// Decode one frame, rejecting bodies larger than `max` before the body
+/// is even inspected (WIRE-020/021).
+///
+/// A zero-length frame yields [`DecodeError::KeepAlive`]: it is a valid frame
+/// (WIRE-024) but carries no body to deserialize. Use [`decode_frame_raw`] to
+/// consume it as an empty body instead.
+pub fn decode_frame_with_limit<T: for<'de> Deserialize<'de>>(
+    buf: &[u8],
+    max: usize,
+) -> Result<Option<(T, usize)>, DecodeError> {
+    let Some((body, total)) = decode_frame_raw(buf, max)? else {
+        return Ok(None);
+    };
+    if body.is_empty() {
+        return Err(DecodeError::KeepAlive);
+    }
+    let value = rmp_serde::from_slice(body)?;
     Ok(Some((value, total)))
 }
 
@@ -97,6 +146,21 @@ mod tokio_io {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("frame body {len} bytes exceeds limit {max} bytes"),
+            ));
+        }
+        // WIRE-024: a zero-length frame is a valid keep-alive, but this helper
+        // reads a *typed* body, so it reports the intent rather than a
+        // MessagePack parse failure — the sync path's DecodeError::KeepAlive,
+        // spelled for io::Error.
+        //
+        // Note this does not decide what a Thunder *server* does with a
+        // keep-alive: the read loop still treats the error as a failed read.
+        // Making the listener skip them is a separate behavioural choice and
+        // is deliberately not made here.
+        if len == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "zero-length frame (keep-alive), not a message body",
             ));
         }
         let mut body = vec![0u8; len];
@@ -390,10 +454,132 @@ mod tests {
     }
 
     #[test]
-    fn zero_length_body_is_a_decode_error() {
+    fn zero_length_body_is_a_keep_alive_not_a_parse_failure() {
+        // WIRE-024: still an error on the typed path — a zero-length body
+        // cannot be a Request — but a *named* one, so a caller can skip a
+        // liveness tick instead of pattern-matching a MessagePack error.
         let buf = 0u32.to_le_bytes();
         let err = decode_frame::<Request>(&buf).unwrap_err();
-        assert!(matches!(err, DecodeError::Rmp(_)));
+        assert!(
+            matches!(err, DecodeError::KeepAlive),
+            "expected KeepAlive, got {err:?}"
+        );
+    }
+
+    // ── GH #6: borrowed-body decode (WIRE-022/024) ─────────────────────────
+
+    #[test]
+    fn raw_decode_borrows_the_body_and_reports_bytes_consumed() {
+        let frame = encode_frame(&Request {
+            id: 7,
+            command: "PING".to_owned(),
+            args: vec![],
+        })
+        .unwrap();
+
+        let (body, consumed) = decode_frame_raw(&frame, DEFAULT_MAX_FRAME_BYTES)
+            .unwrap()
+            .expect("a complete frame decodes");
+        assert_eq!(consumed, frame.len(), "consumed is 4 + body");
+        assert_eq!(body, &frame[4..], "the body is borrowed from the input");
+        // Borrowed, not copied: the slice points into the caller's buffer.
+        assert!(std::ptr::eq(body.as_ptr(), frame[4..].as_ptr()));
+
+        // And the typed path built on it agrees, byte for byte.
+        let (request, typed_consumed): (Request, usize) = decode_frame(&frame).unwrap().unwrap();
+        assert_eq!(typed_consumed, consumed);
+        assert_eq!(request.command, "PING");
+    }
+
+    #[test]
+    fn raw_decode_needs_more_bytes_for_a_partial_frame() {
+        let frame = encode_frame(&Request {
+            id: 1,
+            command: "ECHO".to_owned(),
+            args: vec![Value::bytes(vec![9u8; 64])],
+        })
+        .unwrap();
+
+        // Only a partial prefix.
+        assert!(decode_frame_raw(&frame[..3], DEFAULT_MAX_FRAME_BYTES)
+            .unwrap()
+            .is_none());
+        // Full prefix, partial body.
+        assert!(
+            decode_frame_raw(&frame[..frame.len() - 1], DEFAULT_MAX_FRAME_BYTES)
+                .unwrap()
+                .is_none()
+        );
+        // Complete.
+        assert!(decode_frame_raw(&frame, DEFAULT_MAX_FRAME_BYTES)
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn raw_decode_enforces_the_cap_before_slicing() {
+        // A prefix claiming 1 MiB with no body behind it: the cap must be
+        // judged from the prefix alone (WIRE-021), never by slicing first.
+        let mut buf = (1024u32 * 1024).to_le_bytes().to_vec();
+        buf.extend_from_slice(b"only a few bytes");
+        let err = decode_frame_raw(&buf, 4096).unwrap_err();
+        assert!(matches!(
+            err,
+            DecodeError::FrameTooLarge {
+                body: 1_048_576,
+                max: 4096
+            }
+        ));
+    }
+
+    #[test]
+    fn raw_decode_returns_a_keep_alive_as_an_empty_body() {
+        // WIRE-024: this is the shape that lets a product skip liveness ticks
+        // without wrapping the reader.
+        let buf = 0u32.to_le_bytes();
+        let (body, consumed) = decode_frame_raw(&buf, DEFAULT_MAX_FRAME_BYTES)
+            .unwrap()
+            .expect("a zero-length frame is a complete frame");
+        assert!(body.is_empty());
+        assert_eq!(consumed, 4, "prefix only");
+    }
+
+    #[test]
+    fn raw_decode_walks_a_buffer_of_several_frames() {
+        // The reuse case the issue describes: a product framing its own
+        // bodies drives the buffer with `consumed`, and never reimplements
+        // the prefix/cap/slice rules.
+        let mut stream = Vec::new();
+        for id in 1..=3u32 {
+            stream.extend_from_slice(
+                &encode_frame(&Request {
+                    id,
+                    command: "X".to_owned(),
+                    args: vec![],
+                })
+                .unwrap(),
+            );
+        }
+        // A keep-alive in the middle of the stream must not derail it.
+        stream.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut at = 0;
+        let mut bodies = 0;
+        let mut keep_alives = 0;
+        while at < stream.len() {
+            let (body, consumed) = decode_frame_raw(&stream[at..], DEFAULT_MAX_FRAME_BYTES)
+                .unwrap()
+                .expect("each frame is complete");
+            if body.is_empty() {
+                keep_alives += 1;
+            } else {
+                bodies += 1;
+            }
+            at += consumed;
+        }
+        assert_eq!(bodies, 3);
+        assert_eq!(keep_alives, 1);
+        assert_eq!(at, stream.len(), "the buffer is fully consumed");
     }
 
     #[test]

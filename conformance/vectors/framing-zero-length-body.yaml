@@ -3,4 +3,4 @@ group: framing
 mode: reject
 frame_hex: "00 00 00 00"
 error: decode
-notes: "A zero-length body is a complete frame with malformed (empty) MessagePack: typed decode error, no panic. Covers WIRE-023."
+notes: "A zero-length frame is a complete frame carrying no body — a keep-alive (WIRE-024). A TYPED decode still rejects it, because a zero-length body cannot be a Request/Response; that rejection is what this vector pins. The error CLASS stays decode: which typed error a language returns is a language detail (Rust distinguishes it as KeepAlive since 0.2.0), and every lane must reject it either way. A raw/borrowed-body decode returns it as an empty body instead and is not covered here."

@@ -21,19 +21,19 @@ cargo add thunder-rpc
 
 ```toml
 # Everything (client + server) — the default.
-thunder-rpc = "0.1"
+thunder-rpc = "0.2"
 
 # Client-only SDK: no server code compiled in.
-thunder-rpc = { version = "0.1", default-features = false, features = ["client"] }
+thunder-rpc = { version = "0.2", default-features = false, features = ["client"] }
 
 # Server only.
-thunder-rpc = { version = "0.1", default-features = false, features = ["server"] }
+thunder-rpc = { version = "0.2", default-features = false, features = ["server"] }
 
 # Pure wire layer: no tokio dependency at all.
-thunder-rpc = { version = "0.1", default-features = false }
+thunder-rpc = { version = "0.2", default-features = false }
 
 # Optional TLS transport (additive; the default build stays plaintext-only).
-thunder-rpc = { version = "0.1", features = ["tls"] }
+thunder-rpc = { version = "0.2", features = ["tls"] }
 ```
 
 | Feature | Default | Pulls in | Gives you |
@@ -103,6 +103,9 @@ use thunder::{Config, Value};
 struct Echo;
 
 impl Dispatch for Echo {
+    // Required on every impl; use `()` when the principal name is enough.
+    type Identity = ();
+
     async fn dispatch(
         &self,
         _session: &Session,
@@ -117,7 +120,7 @@ impl Dispatch for Echo {
     }
 
     async fn authenticate(&self, _creds: Credentials) -> Result<Principal, AuthError> {
-        Ok(Principal { name: "anonymous".into() })
+        Ok(Principal::new("anonymous"))
     }
 }
 
@@ -217,10 +220,35 @@ dispersion exceeds 5% (BEN-011) — a benchmark you cannot trust should not
 produce a number. Results and honest caveats:
 [docs/analysis/protocol-shootout/](../docs/analysis/protocol-shootout/).
 
+## Reusing the framing with your own body model
+
+If your frames carry your own envelope rather than Thunder's
+`Request`/`Response`, you still want Thunder's framing — the prefix read, the
+cap check and the body slicing. `decode_frame_raw` gives you exactly that and
+nothing else, borrowing the body from your buffer:
+
+```rust
+use thunder::wire::{decode_frame_raw, DEFAULT_MAX_FRAME_BYTES};
+
+let mut at = 0;
+while let Some((body, consumed)) = decode_frame_raw(&buf[at..], DEFAULT_MAX_FRAME_BYTES)? {
+    if body.is_empty() {
+        // A zero-length frame is a keep-alive (WIRE-024), not an error.
+    } else {
+        handle(my_own_decode(body)?);
+    }
+    at += consumed;
+}
+```
+
+The typed `decode_frame` is this function plus a MessagePack decode, so there
+is one implementation of the framing rules and the two can never disagree.
+This is the Rust counterpart of the TypeScript package's `FrameReader`.
+
 ## Upgrading to 0.2.0
 
-Two breaking changes, both from adopting Thunder in Synap. **The wire is
-untouched** — the corpus is unchanged and the cross-language interop matrix
+Three breaking changes, all from products adopting Thunder — two from Synap,
+one from Fluxum. **The wire is untouched** — the corpus is unchanged and the cross-language interop matrix
 still passes 4/4, so no other language lane and no deployed peer is affected.
 Only the Rust types moved.
 
@@ -245,7 +273,16 @@ let shared: Arc<[u8]> = value.into_shared_bytes().unwrap();  // refcount bump
 let value = Value::bytes(Arc::clone(&stored));               // no copy
 ```
 
-**2. `Dispatch` has an `Identity` associated type; `Principal` and `Session`
+**2. `DecodeError` has a `KeepAlive` variant, and zero-length frames are
+defined.**
+
+A zero-length frame used to surface as `DecodeError::Rmp` — a parse failure.
+It is now `DecodeError::KeepAlive`, because a zero-length frame is a valid
+keep-alive (WIRE-024) rather than garbage. Match on it if you care; the typed
+path still refuses it either way, and `decode_frame_raw` hands it to you as an
+empty body.
+
+**3. `Dispatch` has an `Identity` associated type; `Principal` and `Session`
 carry it.**
 
 A product's resolved identity — roles, tenant, quotas — had nowhere to live,

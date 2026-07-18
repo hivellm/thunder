@@ -39,6 +39,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::backend::NoopBackend;
 use crate::bolt::{spawn_bolt_listener, BoltHandle};
+use crate::capnp_lane::{spawn_capnp_listener, CapnpHandle};
 use crate::grpc::{spawn_grpc_listener, GrpcHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
 use crate::memcached::{spawn_memcached_listener, McHandle};
@@ -125,6 +126,13 @@ pub enum Lane {
     /// the mirror of the MessagePack-RPC lane (phase4_shootout-expansion).
     /// Excluded from [`Lane::ALL`].
     Thrift,
+    /// **Reference, not a G5 lane, and NOT throughput-comparable**: Cap'n Proto
+    /// RPC ([`crate::capnp_lane`]) — the only peer with **no parse step**
+    /// (field access is pointer arithmetic into the received buffer). Its
+    /// `RpcSystem` is `!Send` and needs a dedicated current-thread runtime, so
+    /// only its depth=1/conns=1 latency is comparable; see that module's docs
+    /// (phase4_shootout-expansion). Excluded from [`Lane::ALL`].
+    Capnp,
 }
 
 impl Lane {
@@ -142,6 +150,7 @@ impl Lane {
             Self::MsgpackRpc => "msgpack-rpc",
             Self::Grpc => "grpc",
             Self::Thrift => "thrift",
+            Self::Capnp => "capnp",
         }
     }
 
@@ -153,7 +162,7 @@ impl Lane {
 
     /// The G5 lanes plus the diagnostic and reference lanes measured under
     /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 11] = [
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 12] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
@@ -165,6 +174,7 @@ impl Lane {
         Lane::MsgpackRpc,
         Lane::Grpc,
         Lane::Thrift,
+        Lane::Capnp,
     ];
 }
 
@@ -264,6 +274,8 @@ pub struct Targets {
     pub grpc: GrpcHandle,
     /// The Thrift reference listener handle ([`crate::thrift_lane`]).
     pub thrift: ThriftHandle,
+    /// The Cap'n Proto reference listener handle ([`crate::capnp_lane`]).
+    pub capnp: CapnpHandle,
 }
 
 impl Targets {
@@ -280,6 +292,7 @@ impl Targets {
         self.msgpack_rpc.stop().await;
         self.grpc.stop().await;
         self.thrift.stop().await;
+        self.capnp.stop().await;
     }
 }
 
@@ -307,6 +320,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let msgpack_rpc = spawn_msgpack_rpc_listener(Arc::clone(&backend), loopback).await?;
     let grpc = spawn_grpc_listener(Arc::clone(&backend), loopback).await?;
     let thrift = spawn_thrift_listener(Arc::clone(&backend), loopback).await?;
+    let capnp = spawn_capnp_listener(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -320,6 +334,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         msgpack_rpc,
         grpc,
         thrift,
+        capnp,
     })
 }
 
@@ -355,6 +370,7 @@ pub async fn run_scenario(
                 }
                 Lane::Grpc => crate::grpc::storm(&targets.grpc, storms, cfg).await?,
                 Lane::Thrift => crate::thrift_lane::storm(&targets.thrift, storms, cfg).await?,
+                Lane::Capnp => crate::capnp_lane::storm(&targets.capnp, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -385,6 +401,7 @@ pub async fn run_scenario(
                     }
                     Lane::Grpc => crate::grpc::cell(&targets.grpc, &spec, cfg).await?,
                     Lane::Thrift => crate::thrift_lane::cell(&targets.thrift, &spec, cfg).await?,
+                    Lane::Capnp => crate::capnp_lane::cell(&targets.capnp, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

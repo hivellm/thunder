@@ -32,6 +32,9 @@ http-body = "1.1.0"
 tower-service = "0.3.3"
 bytes = "1.12.1"
 thrift = "0.24"
+capnp = "0.26"
+capnp-rpc = "0.26"
+tokio-util = { version = "0.7.18", features = ["compat"] }
 
 [lints]
 workspace = true

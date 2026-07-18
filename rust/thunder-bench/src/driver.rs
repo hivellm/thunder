@@ -42,6 +42,7 @@ use crate::bolt::{spawn_bolt_listener, BoltHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
 use crate::memcached::{spawn_memcached_listener, McHandle};
 use crate::mongodb::{spawn_mongodb_listener, MongoHandle};
+use crate::postgres::{spawn_postgres_listener, PgHandle};
 use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
 use crate::stats::{compute, dispersion, CellStats, Dispersion};
@@ -95,6 +96,12 @@ pub enum Lane {
     /// (phase4_shootout-expansion). Measured for breadth. Excluded from
     /// [`Lane::ALL`].
     Mongodb,
+    /// **Reference, not a G5 lane**: the PostgreSQL v3 wire
+    /// ([`crate::postgres`]) — the mature, heavily-optimized DB wire, typed and
+    /// length-prefixed like Thunder but answering each query with a
+    /// multi-message response cycle (phase4_shootout-expansion). Measured for
+    /// breadth. Excluded from [`Lane::ALL`].
+    Postgres,
 }
 
 impl Lane {
@@ -108,6 +115,7 @@ impl Lane {
             Self::ThunderStripped => "thunder-stripped",
             Self::Memcached => "memcached",
             Self::Mongodb => "mongodb",
+            Self::Postgres => "postgres",
         }
     }
 
@@ -119,7 +127,7 @@ impl Lane {
 
     /// The G5 lanes plus the diagnostic and reference lanes measured under
     /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 7] = [
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 8] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
@@ -127,6 +135,7 @@ impl Lane {
         Lane::ThunderStripped,
         Lane::Memcached,
         Lane::Mongodb,
+        Lane::Postgres,
     ];
 }
 
@@ -218,6 +227,8 @@ pub struct Targets {
     pub memcached: McHandle,
     /// The MongoDB OP_MSG reference listener handle ([`crate::mongodb`]).
     pub mongodb: MongoHandle,
+    /// The PostgreSQL v3 reference listener handle ([`crate::postgres`]).
+    pub postgres: PgHandle,
 }
 
 impl Targets {
@@ -230,6 +241,7 @@ impl Targets {
         self.stripped.stop().await;
         self.memcached.stop().await;
         self.mongodb.stop().await;
+        self.postgres.stop().await;
     }
 }
 
@@ -253,6 +265,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let http = spawn_http_listener(Arc::clone(&backend), loopback).await?;
     let memcached = spawn_memcached_listener(Arc::clone(&backend), loopback).await?;
     let mongodb = spawn_mongodb_listener(Arc::clone(&backend), loopback).await?;
+    let postgres = spawn_postgres_listener(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -262,6 +275,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         stripped,
         memcached,
         mongodb,
+        postgres,
     })
 }
 
@@ -291,6 +305,7 @@ pub async fn run_scenario(
                 }
                 Lane::Memcached => crate::memcached::storm(&targets.memcached, storms, cfg).await?,
                 Lane::Mongodb => crate::mongodb::storm(&targets.mongodb, storms, cfg).await?,
+                Lane::Postgres => crate::postgres::storm(&targets.postgres, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -315,6 +330,7 @@ pub async fn run_scenario(
                         crate::memcached::cell(&targets.memcached, &spec, cfg).await?
                     }
                     Lane::Mongodb => crate::mongodb::cell(&targets.mongodb, &spec, cfg).await?,
+                    Lane::Postgres => crate::postgres::cell(&targets.postgres, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

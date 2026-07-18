@@ -54,6 +54,7 @@ pub mod http;
 pub mod memcached;
 pub mod mongodb;
 pub mod pinning;
+pub mod postgres;
 pub mod product_harness;
 pub mod resp3;
 pub mod scenarios;

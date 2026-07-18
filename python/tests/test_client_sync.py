@@ -353,6 +353,15 @@ def test_handshake_rejection_is_a_typed_auth_error() -> None:
 #: one.
 BLACKHOLE_ADDR = "192.0.2.1:9"
 
+#: Slack for the wall-clock assertion below. Windows' default timer
+#: granularity is ~15.6 ms, so a 150 ms dial can legitimately measure as
+#: ~140 ms there — which failed CI on windows-latest at exactly 0.140 s. The
+#: assertion only has to prove the dial *waited out* its timeout instead of
+#: failing instantly (an instant failure is the ConnectionError class, which
+#: is what this test exists to distinguish), and one timer tick of slack keeps
+#: that meaning while surviving a coarse clock.
+CONNECT_TIMEOUT_SLACK = 0.02
+
 
 def test_connect_timeout_fires_as_typed_timeout() -> None:
     started = time.monotonic()
@@ -365,9 +374,10 @@ def test_connect_timeout_fires_as_typed_timeout() -> None:
             ClientConfig(connect_timeout=0.15),
         )
     elapsed = time.monotonic() - started
-    assert (
-        elapsed >= 0.15
-    ), "the dial must be given the full connect timeout before failing"
+    assert elapsed >= 0.15 - CONNECT_TIMEOUT_SLACK, (
+        "the dial must be given the full connect timeout before failing, "
+        f"but returned after {elapsed:.3f}s"
+    )
 
 
 def test_per_call_timeout_fires_and_late_response_is_dropped() -> None:

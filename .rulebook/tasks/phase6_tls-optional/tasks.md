@@ -5,12 +5,12 @@
       — ListenerConfig.tls: Option<ServerTls{cert_path,key_path}> + `.with_tls()` builder, None by default. Cert/key load errors surface as io::Error at spawn_listener (fail-fast before bind). TLS configured without the `tls` feature is a hard error (io::ErrorKind::Unsupported), never a silent plaintext downgrade. mTLS/client-CA is a later additive capability (with_no_client_auth today).
 - [x] 1.3 thunder::client: optional TLS connector (rustls with native/webpki roots or a configured CA), opt-in via client config; plaintext default; TLS/handshake failures classify as Connection errors (FR-29)
       — ClientConfig.tls: Option<ClientTls{server_name, ca_path}> + `.with_tls()`. ca_path pins a CA; None uses the native root store. reader_loop/writer_loop genericized over <R>/<W>; establish branches (spawn_conn helper). Setup/handshake/verification failures all map to ClientError::Connection. The cert-mismatch test proves it.
-- [ ] 1.4 typescript client: TLS connect option via Node `tls.connect` gated by client config, off by default
-      — FOLLOW-ON (not this increment). The Rust reference — config shape (server_name + ca_path/native roots), the Connection error mapping, off-by-default — is the pattern to mirror.
-- [ ] 1.5 python client (sync + async): TLS via `ssl.SSLContext` gated by config, off by default, both clients identical
-      — FOLLOW-ON.
-- [ ] 1.6 csharp client: TLS via `SslStream` gated by config, off by default
-      — FOLLOW-ON.
+- [x] 1.4 typescript client: TLS connect option via Node `tls.connect` gated by client config, off by default
+      — DONE (commit f7de9ce): ClientTls (serverName?/caPath?) on ClientOptions.tls; #dial completes a tls.connect handshake before any frame when set; caPath pins roots else system store; failure = ConnectionError; Client.isAlive added. Tests: round-trip, plaintext-still-works, cert-mismatch. tsc + eslint clean, vitest 127/127.
+- [x] 1.5 python client (sync + async): TLS via `ssl.SSLContext` gated by config, off by default, both clients identical
+      — DONE (commit a7398db): tls.py (ClientTls + build_client_context); client.py/aio.py wrap the socket before any frame; failure = ConnectionError; is_alive() added; a bounded async wait_closed() so a TLS peer can't hang teardown. Tests x6 sync+async. ruff clean, pytest 148.
+- [x] 1.6 csharp client: TLS via `SslStream` gated by config, off by default
+      — DONE (commit d28bcf1): ClientConfig.Tls (ServerName/CaPath); client wraps in SslStream + AuthenticateAsClientAsync before any frame; CaPath pins via CustomRootTrust else system trust; failure = ThunderConnectionException; IsAlive added. Tests x3. build 0-warn, dotnet test 131/131.
 - [x] 1.7 Docs: SPEC-004/SPEC-008 TLS notes finalized; README gains a short "enabling TLS" section; off by default and opt-in
       — Root README has a "TLS (optional, off by default)" subsection (feature flag + server/client snippets + the fail-fast-not-silent note). SPEC-008 CAN-020 and SPEC-004 SRV-040 already normative. Per-package READMEs for the three client languages ship with 1.4-1.6.
 

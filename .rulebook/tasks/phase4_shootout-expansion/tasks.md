@@ -12,7 +12,8 @@ Phase 1 — ceiling & variant (low cost):
 
 Phase 2 — serious binary DB wires:
 - [ ] 1.3 PostgreSQL v3 wire lane — startup + simple/extended query + DataRow; a mature, heavily-optimized DB wire
-- [ ] 1.4 MongoDB OP_MSG lane — header + BSON body; a natural codec comparison (BSON vs MessagePack)
+- [x] 1.4 MongoDB OP_MSG lane — header + BSON body; a natural codec comparison (BSON vs MessagePack)
+      — `thunder-bench/src/mongodb.rs`: minimal OP_MSG listener (opcode 2013, section kind 0, a two-field `{c, v}` BSON command document — `c` selects the backend mode, `v` carries the payload; replies `{ok:1, r:<value>}`) + a small BSON encoder/decoder (string + int32 fields, length-prefixed, NUL-terminated) + FIFO parity driver + storm. Length-prefixed like Thunder (messageLength first), so it reads cleanly async. Wired as a **reference** lane (Lane::Mongodb in ALL_WITH_DIAGNOSTIC, not Lane::ALL — a codec comparison, not a G5 peer). 6 unit tests green (BSON round-trip, length-prefix invariants, echo/static replies); validated end-to-end over sockets (bytes coherent: point-echo in 110/out 106; medium STATIC command in 48/out 4138). Full Rust gate green. Done ahead of the Phase 1/2 ordering because it is length-prefixed (cheaper async) than the streaming MessagePack-RPC.
 
 Phase 3 — binary RPCs:
 - [ ] 1.5 Apache Thrift (TCompactProtocol over framed transport) lane

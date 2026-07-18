@@ -41,6 +41,7 @@ use crate::backend::NoopBackend;
 use crate::bolt::{spawn_bolt_listener, BoltHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
 use crate::memcached::{spawn_memcached_listener, McHandle};
+use crate::mongodb::{spawn_mongodb_listener, MongoHandle};
 use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
 use crate::stats::{compute, dispersion, CellStats, Dispersion};
@@ -89,6 +90,11 @@ pub enum Lane {
     /// not a peer Thunder must beat: it wins by *being* trivial. Excluded from
     /// [`Lane::ALL`].
     Memcached,
+    /// **Reference, not a G5 lane**: MongoDB OP_MSG ([`crate::mongodb`]) — the
+    /// natural codec comparison (BSON vs MessagePack), length-prefixed and FIFO
+    /// (phase4_shootout-expansion). Measured for breadth. Excluded from
+    /// [`Lane::ALL`].
+    Mongodb,
 }
 
 impl Lane {
@@ -101,6 +107,7 @@ impl Lane {
             Self::Http => "http",
             Self::ThunderStripped => "thunder-stripped",
             Self::Memcached => "memcached",
+            Self::Mongodb => "mongodb",
         }
     }
 
@@ -112,13 +119,14 @@ impl Lane {
 
     /// The G5 lanes plus the diagnostic and reference lanes measured under
     /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 6] = [
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 7] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
         Lane::Http,
         Lane::ThunderStripped,
         Lane::Memcached,
+        Lane::Mongodb,
     ];
 }
 
@@ -208,6 +216,8 @@ pub struct Targets {
     pub stripped: StrippedHandle,
     /// The Memcached-binary reference listener handle ([`crate::memcached`]).
     pub memcached: McHandle,
+    /// The MongoDB OP_MSG reference listener handle ([`crate::mongodb`]).
+    pub mongodb: MongoHandle,
 }
 
 impl Targets {
@@ -219,6 +229,7 @@ impl Targets {
         self.http.stop().await;
         self.stripped.stop().await;
         self.memcached.stop().await;
+        self.mongodb.stop().await;
     }
 }
 
@@ -241,6 +252,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let bolt = spawn_bolt_listener(Arc::clone(&backend), loopback).await?;
     let http = spawn_http_listener(Arc::clone(&backend), loopback).await?;
     let memcached = spawn_memcached_listener(Arc::clone(&backend), loopback).await?;
+    let mongodb = spawn_mongodb_listener(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -249,6 +261,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         http,
         stripped,
         memcached,
+        mongodb,
     })
 }
 
@@ -277,6 +290,7 @@ pub async fn run_scenario(
                         .await?
                 }
                 Lane::Memcached => crate::memcached::storm(&targets.memcached, storms, cfg).await?,
+                Lane::Mongodb => crate::mongodb::storm(&targets.mongodb, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -300,6 +314,7 @@ pub async fn run_scenario(
                     Lane::Memcached => {
                         crate::memcached::cell(&targets.memcached, &spec, cfg).await?
                     }
+                    Lane::Mongodb => crate::mongodb::cell(&targets.mongodb, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

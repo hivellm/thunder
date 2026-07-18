@@ -30,6 +30,7 @@ from .client_config import ClientConfig, HandshakeInfo
 from .config import Config, PushPolicy
 from .endpoint import parse_endpoint
 from .errors import from_server_message
+from .tls import build_client_context, server_name_for
 from .value import PUSH_ID, Request, Value
 
 PushHandler = Callable[[Value], Any]
@@ -232,7 +233,13 @@ class AsyncClient:
                 except (asyncio.CancelledError, Exception):
                     pass
             try:
-                await conn.writer.wait_closed()
+                # Bounded: this is a forced teardown (pending calls already
+                # failed, the reader is cancelled), so we do not block on the
+                # peer's graceful shutdown. On a TLS transport wait_closed()
+                # otherwise waits for the peer's close_notify — a wait the sync
+                # client never makes (it shuts the socket down immediately), so
+                # bounding it keeps the two clients' close identical (FR-28).
+                await asyncio.wait_for(conn.writer.wait_closed(), timeout=1.0)
             except Exception:
                 pass
 
@@ -240,6 +247,15 @@ class AsyncClient:
         """True once the current connection's handshake authenticated
         (CLT-003 — auth is sticky per connection)."""
         return self._handshake_info.authenticated
+
+    def is_alive(self) -> bool:
+        """True while the current connection is live — not poisoned (CLT-014)
+        and not closed (CLT-004). The optional pool (CLT-080) uses this to
+        drop a dead connection instead of handing it back; ordinary callers
+        rely on typed call errors and lazy reconnect (CLT-030) rather than
+        polling this."""
+        conn = self._conn
+        return conn is not None and conn.alive
 
     def capabilities(self) -> tuple[str, ...]:
         """Capabilities the server advertised in the ``HELLO`` reply."""
@@ -317,9 +333,25 @@ class AsyncClient:
         """Dial (with the connect timeout, TCP_NODELAY on — CLT-001), start
         the reader task, and run the configured handshake (CLT-002)."""
         host, port = self._endpoint.host, self._endpoint.port
+        # CLT-001 / FR-29: when TLS is configured, hand the context to
+        # asyncio.open_connection so the TLS handshake completes before any
+        # Thunder frame; setup/handshake/verification failures are the
+        # Connection error class. The plaintext path is untouched.
+        tls = self._client_config.tls
+        ssl_context = None
+        server_hostname = None
+        if tls is not None:
+            try:
+                ssl_context = build_client_context(tls)
+            except OSError as exc:  # ssl.SSLError is an OSError subclass
+                raise errors.ConnectionError(f"TLS setup failed: {exc}") from exc
+            server_hostname = server_name_for(tls, host)
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), self._client_config.connect_timeout
+                asyncio.open_connection(
+                    host, port, ssl=ssl_context, server_hostname=server_hostname
+                ),
+                self._client_config.connect_timeout,
             )
         except asyncio.TimeoutError as exc:
             raise errors.TimeoutError() from exc

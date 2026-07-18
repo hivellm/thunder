@@ -45,6 +45,7 @@ from .client_config import ClientConfig, HandshakeInfo
 from .config import Config, PushPolicy
 from .endpoint import parse_endpoint
 from .errors import from_server_message
+from .tls import build_client_context, server_name_for
 from .value import PUSH_ID, Request, Response, Value
 
 PushHandler = Callable[[Value], None]
@@ -260,6 +261,16 @@ class Client:
         (CLT-003 — auth is sticky per connection)."""
         return self._handshake_info.authenticated
 
+    def is_alive(self) -> bool:
+        """True while the current connection is live — not poisoned (CLT-014)
+        and not closed (CLT-004). The optional pool (CLT-080) uses this to
+        drop a dead connection instead of handing it back; ordinary callers
+        rely on typed call errors and lazy reconnect (CLT-030) rather than
+        polling this."""
+        with self._conn_lock:
+            conn = self._conn
+        return conn is not None and conn.alive
+
     def capabilities(self) -> tuple[str, ...]:
         """Capabilities the server advertised in the ``HELLO`` reply."""
         return self._handshake_info.capabilities
@@ -357,6 +368,19 @@ class Client:
         except OSError as exc:
             sock.close()
             raise errors.ConnectionError(f"TCP_NODELAY failed: {exc}") from exc
+        # CLT-001 / FR-29: when TLS is configured, complete the TLS handshake
+        # before any Thunder frame; setup/handshake/verification failures are
+        # the Connection error class. The plaintext path is untouched.
+        tls = self._client_config.tls
+        if tls is not None:
+            try:
+                context = build_client_context(tls)
+                sock = context.wrap_socket(
+                    sock, server_hostname=server_name_for(tls, host)
+                )
+            except OSError as exc:  # ssl.SSLError is an OSError subclass
+                sock.close()
+                raise errors.ConnectionError(f"TLS handshake failed: {exc}") from exc
         conn = _Conn(sock)
         reader = threading.Thread(
             target=self._reader_loop, args=(conn,), name="thunder-reader", daemon=True

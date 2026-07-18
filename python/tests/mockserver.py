@@ -6,11 +6,50 @@ always a plain thread)."""
 
 from __future__ import annotations
 
+import datetime
 import socket
+import ssl
 import threading
 from typing import Callable
 
 from thunder_rpc import PUSH_ID, Request, Response, Value, wire
+
+
+def self_signed_cert(common_name: str = "localhost") -> tuple[bytes, bytes]:
+    """A fresh self-signed cert/key for ``common_name``, PEM-encoded — the
+    Python mirror of the Rust ``rcgen`` helper in ``tests/tls.rs``. Generated
+    in-test (no fixtures checked in) via ``cryptography``. The cert carries a
+    matching SAN and ``CA:TRUE`` so it can act as its own trust anchor when the
+    client pins it via ``ca_path`` (the self-signed pattern)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=3650))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName(common_name)]), critical=False
+        )
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+    key_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    )
+    return cert_pem, key_pem
 
 #: Frame cap the loopback responders read with.
 SRV_CAP = 1024 * 1024
@@ -76,8 +115,23 @@ class MockServer:
     ``accept()`` / frame helpers. Use as a context manager — exit joins the
     script and re-raises anything it tripped on."""
 
-    def __init__(self, script: Callable[["MockServer"], None]) -> None:
+    def __init__(
+        self,
+        script: Callable[["MockServer"], None],
+        *,
+        tls_cert_path: str | None = None,
+        tls_key_path: str | None = None,
+    ) -> None:
         self._script = script
+        #: When set, accepted sockets are wrapped in TLS before framing —
+        #: the mirror of the tokio ``TlsAcceptor`` path (SRV-040). Off by
+        #: default, so the plaintext responders are unchanged.
+        self._server_ctx: ssl.SSLContext | None = None
+        if tls_cert_path is not None and tls_key_path is not None:
+            self._server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            self._server_ctx.load_cert_chain(
+                certfile=tls_cert_path, keyfile=tls_key_path
+            )
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen(8)
@@ -96,6 +150,11 @@ class MockServer:
     def accept(self) -> ServerConn:
         sock, _ = self._listener.accept()
         self.accepts += 1
+        if self._server_ctx is not None:
+            # The TLS handshake completes here, before any Thunder frame — no
+            # STARTTLS. A mismatched/untrusted client aborts it; the script is
+            # expected to tolerate that (see the cert-mismatch tests).
+            sock = self._server_ctx.wrap_socket(sock, server_side=True)
         conn = ServerConn(sock)
         self._conns.append(conn)
         return conn

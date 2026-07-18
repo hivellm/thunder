@@ -43,6 +43,8 @@ from .errors import (
     TimeoutError,
     from_server_message,
 )
+from .pool import AsyncPool, Pool
+from .tls import ClientTls
 from .value import (
     DEFAULT_MAX_FRAME_BYTES,
     PUSH_ID,
@@ -56,9 +58,11 @@ __version__ = "0.1.0"
 
 __all__ = [
     "AsyncClient",
+    "AsyncPool",
     "AuthError",
     "Client",
     "ClientConfig",
+    "ClientTls",
     "Config",
     "ConnectionError",
     "Credentials",
@@ -71,6 +75,7 @@ __all__ = [
     "HandshakeInfo",
     "HelloStyle",
     "PUSH_ID",
+    "Pool",
     "PushPolicy",
     "Request",
     "Response",

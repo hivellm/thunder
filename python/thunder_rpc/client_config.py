@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .tls import ClientTls
+
 
 @dataclass(frozen=True)
 class Credentials:
@@ -61,6 +63,11 @@ class ClientConfig:
     credentials: Credentials | None = None
     #: Client identifier sent in the ``HELLO`` map (``HELLO_MANDATORY``).
     client_name: str | None = None
+    #: Optional client TLS (FR-29 / SPEC-008 CAN-020). ``None`` (the default)
+    #: keeps plaintext; a :class:`~thunder_rpc.tls.ClientTls` makes the client
+    #: complete a TLS handshake before any Thunder frame. A TLS/verification
+    #: failure classifies as :class:`~thunder_rpc.errors.ConnectionError`.
+    tls: ClientTls | None = None
 
 
 @dataclass(frozen=True)

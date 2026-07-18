@@ -1407,6 +1407,7 @@ name = "thunder-bench"
 version = "0.1.0"
 dependencies = [
  "core_affinity",
+ "rmp-serde",
  "serde",
  "serde_json",
  "thunder-rpc",

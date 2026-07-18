@@ -42,6 +42,7 @@ use crate::bolt::{spawn_bolt_listener, BoltHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
 use crate::memcached::{spawn_memcached_listener, McHandle};
 use crate::mongodb::{spawn_mongodb_listener, MongoHandle};
+use crate::msgpack_rpc::{spawn_msgpack_rpc_listener, MsgpackHandle};
 use crate::postgres::{spawn_postgres_listener, PgHandle};
 use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
@@ -102,6 +103,12 @@ pub enum Lane {
     /// multi-message response cycle (phase4_shootout-expansion). Measured for
     /// breadth. Excluded from [`Lane::ALL`].
     Postgres,
+    /// **Reference, not a G5 lane**: MessagePack-RPC ([`crate::msgpack_rpc`])
+    /// — Thunder's sibling, the *same* codec with no length prefix, so it
+    /// isolates what the `u32` prefix (WIRE-001) buys against a self-delimiting
+    /// stream (phase4_shootout-expansion). Measured for breadth. Excluded from
+    /// [`Lane::ALL`].
+    MsgpackRpc,
 }
 
 impl Lane {
@@ -116,6 +123,7 @@ impl Lane {
             Self::Memcached => "memcached",
             Self::Mongodb => "mongodb",
             Self::Postgres => "postgres",
+            Self::MsgpackRpc => "msgpack-rpc",
         }
     }
 
@@ -127,7 +135,7 @@ impl Lane {
 
     /// The G5 lanes plus the diagnostic and reference lanes measured under
     /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 8] = [
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 9] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
@@ -136,6 +144,7 @@ impl Lane {
         Lane::Memcached,
         Lane::Mongodb,
         Lane::Postgres,
+        Lane::MsgpackRpc,
     ];
 }
 
@@ -229,6 +238,8 @@ pub struct Targets {
     pub mongodb: MongoHandle,
     /// The PostgreSQL v3 reference listener handle ([`crate::postgres`]).
     pub postgres: PgHandle,
+    /// The MessagePack-RPC reference listener handle ([`crate::msgpack_rpc`]).
+    pub msgpack_rpc: MsgpackHandle,
 }
 
 impl Targets {
@@ -242,6 +253,7 @@ impl Targets {
         self.memcached.stop().await;
         self.mongodb.stop().await;
         self.postgres.stop().await;
+        self.msgpack_rpc.stop().await;
     }
 }
 
@@ -266,6 +278,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let memcached = spawn_memcached_listener(Arc::clone(&backend), loopback).await?;
     let mongodb = spawn_mongodb_listener(Arc::clone(&backend), loopback).await?;
     let postgres = spawn_postgres_listener(Arc::clone(&backend), loopback).await?;
+    let msgpack_rpc = spawn_msgpack_rpc_listener(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -276,6 +289,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         memcached,
         mongodb,
         postgres,
+        msgpack_rpc,
     })
 }
 
@@ -306,6 +320,9 @@ pub async fn run_scenario(
                 Lane::Memcached => crate::memcached::storm(&targets.memcached, storms, cfg).await?,
                 Lane::Mongodb => crate::mongodb::storm(&targets.mongodb, storms, cfg).await?,
                 Lane::Postgres => crate::postgres::storm(&targets.postgres, storms, cfg).await?,
+                Lane::MsgpackRpc => {
+                    crate::msgpack_rpc::storm(&targets.msgpack_rpc, storms, cfg).await?
+                }
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -331,6 +348,9 @@ pub async fn run_scenario(
                     }
                     Lane::Mongodb => crate::mongodb::cell(&targets.mongodb, &spec, cfg).await?,
                     Lane::Postgres => crate::postgres::cell(&targets.postgres, &spec, cfg).await?,
+                    Lane::MsgpackRpc => {
+                        crate::msgpack_rpc::cell(&targets.msgpack_rpc, &spec, cfg).await?
+                    }
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

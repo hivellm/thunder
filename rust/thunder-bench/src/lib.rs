@@ -53,6 +53,7 @@ pub mod driver;
 pub mod http;
 pub mod memcached;
 pub mod mongodb;
+pub mod msgpack_rpc;
 pub mod pinning;
 pub mod postgres;
 pub mod product_harness;

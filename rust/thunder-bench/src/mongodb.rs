@@ -19,8 +19,19 @@
 //! section kind (0, body), and a two-field command document `{c, v}` — `c`
 //! selects the backend mode (`ECHO`/`STATIC`/`SINK`/`PING`), `v` carries the
 //! payload. Replies are `{ok: 1, r: <value>}`. No cursors, no checksum flag, no
-//! auth, no real command catalog — just enough BSON to move the matrix's
-//! payloads through a faithful OP_MSG frame.
+//! auth, no real command catalog.
+//!
+//! **The BSON itself is the real thing**: documents are encoded and decoded by
+//! the `bson` crate, not by a hand-rolled subset. That matters more here than
+//! in any other lane — this lane exists to compare BSON against MessagePack,
+//! so a homemade encoder would have made the codec under test a homemade
+//! codec, and any result would have measured this file rather than BSON. Only
+//! the OP_MSG framing around it is ours (no Rust MongoDB *server* exists to
+//! borrow it from; the official crate is a client).
+//!
+//! BSON strings are UTF-8 by definition, so payloads must be valid UTF-8 —
+//! the matrix's are ASCII by construction and [`build_mongodb_request`]
+//! refuses anything else rather than mangling it.
 //!
 //! # Parity (BEN-003)
 //!
@@ -36,6 +47,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use bson::{doc, Document};
 use thunder::wire::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -50,10 +62,6 @@ use crate::stats::compute;
 const HEADER_LEN: usize = 16;
 /// The one opcode this peer models.
 const OP_MSG: i32 = 2013;
-/// BSON element type: UTF-8 string.
-const BSON_STRING: u8 = 0x02;
-/// BSON element type: 32-bit integer.
-const BSON_INT32: u8 = 0x10;
 /// Message cap — mirrors the Thunder frame cap (WIRE-020) so an oversized
 /// length prefix cannot drive an unbounded allocation.
 const MAX_MSG_LEN: usize = thunder::wire::DEFAULT_MAX_FRAME_BYTES;
@@ -63,105 +71,39 @@ fn lock<T>(mutex: &StdMutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-// ── BSON (the minimal subset this lane needs) ───────────────────────────────
+// ── BSON (the real codec — `bson` crate) ────────────────────────────────────
 
 /// Encode `{ "c": <cmd>, "v": <payload> }` as one BSON document.
-fn bson_command(cmd: &str, payload: &[u8]) -> Vec<u8> {
-    let mut body = Vec::with_capacity(payload.len() + 32);
-    bson_string_field(&mut body, "c", cmd.as_bytes());
-    bson_string_field(&mut body, "v", payload);
-    finish_bson(body)
+fn bson_command(cmd: &str, payload: &str) -> Result<Vec<u8>, String> {
+    doc! { "c": cmd, "v": payload }
+        .to_vec()
+        .map_err(|e| format!("bson encode failed: {e}"))
 }
 
 /// Encode `{ "ok": 1, "r": <value> }` as one BSON document.
-fn bson_reply(value: &[u8]) -> Vec<u8> {
-    let mut body = Vec::with_capacity(value.len() + 32);
-    // "ok": 1 (int32)
-    body.push(BSON_INT32);
-    body.extend_from_slice(b"ok\0");
-    body.extend_from_slice(&1i32.to_le_bytes());
-    bson_string_field(&mut body, "r", value);
-    finish_bson(body)
+fn bson_reply(value: &str) -> Result<Vec<u8>, String> {
+    doc! { "ok": 1i32, "r": value }
+        .to_vec()
+        .map_err(|e| format!("bson encode failed: {e}"))
 }
 
-/// Append a `name: <utf8/bytes>` string field (BSON string is length-prefixed
-/// and NUL-terminated).
-fn bson_string_field(body: &mut Vec<u8>, name: &str, value: &[u8]) {
-    body.push(BSON_STRING);
-    body.extend_from_slice(name.as_bytes());
-    body.push(0);
-    // length includes the trailing NUL.
-    body.extend_from_slice(&((value.len() + 1) as i32).to_le_bytes());
-    body.extend_from_slice(value);
-    body.push(0);
+/// Extract the `c` and `v` fields from a request document. A missing `v` is
+/// an empty payload — the sentinels carry none.
+fn parse_command(bytes: &[u8]) -> Option<(String, String)> {
+    let document = Document::from_reader(bytes).ok()?;
+    let cmd = document.get_str("c").ok()?.to_owned();
+    let payload = document.get_str("v").unwrap_or_default().to_owned();
+    Some((cmd, payload))
 }
 
-/// Prefix the 4-byte document length and append the document terminator.
-fn finish_bson(body: Vec<u8>) -> Vec<u8> {
-    let total = 4 + body.len() + 1;
-    let mut out = Vec::with_capacity(total);
-    out.extend_from_slice(&(total as i32).to_le_bytes());
-    out.extend_from_slice(&body);
-    out.push(0); // document terminator
-    out
-}
-
-/// Extract the `c` and `v` string fields from a request BSON document, skipping
-/// anything else. Tolerant by design — a benchmark peer, not a validator.
-fn parse_command(doc: &[u8]) -> Option<(String, Vec<u8>)> {
-    if doc.len() < 5 {
-        return None;
-    }
-    let mut cmd: Option<String> = None;
-    let mut payload: Option<Vec<u8>> = None;
-    let mut i = 4; // skip the int32 length
-    while i < doc.len() {
-        let tag = doc[i];
-        if tag == 0x00 {
-            break; // document terminator
-        }
-        i += 1;
-        // element name: a NUL-terminated cstring
-        let name_start = i;
-        while i < doc.len() && doc[i] != 0 {
-            i += 1;
-        }
-        if i >= doc.len() {
-            return None;
-        }
-        let name = &doc[name_start..i];
-        i += 1; // skip the NUL
-        match tag {
-            BSON_STRING => {
-                if i + 4 > doc.len() {
-                    return None;
-                }
-                let len = i32::from_le_bytes([doc[i], doc[i + 1], doc[i + 2], doc[i + 3]]) as usize;
-                i += 4;
-                if len == 0 || i + len > doc.len() {
-                    return None;
-                }
-                let value = doc[i..i + len - 1].to_vec(); // drop trailing NUL
-                i += len;
-                if name == b"c" {
-                    cmd = Some(String::from_utf8_lossy(&value).into_owned());
-                } else if name == b"v" {
-                    payload = Some(value);
-                }
-            }
-            BSON_INT32 => i += 4,
-            _ => return None, // unsupported type — this peer only sends c/v strings
-        }
-    }
-    Some((cmd?, payload.unwrap_or_default()))
-}
-
-/// A backend reply value as the bytes carried in the reply's `r` field.
-fn value_to_bytes(value: Value) -> Vec<u8> {
+/// A backend reply value as the string carried in the reply's `r` field.
+/// BSON strings are UTF-8 by definition, and the matrix's payloads are ASCII
+/// by construction, so this is total for the traffic this lane carries.
+fn value_to_string(value: Value) -> String {
     match value {
-        Value::Str(s) => s.into_bytes(),
-        Value::Bytes(b) => b,
-        _ => Vec::new(),
+        Value::Str(s) => s,
+        Value::Bytes(b) => String::from_utf8_lossy(&b).into_owned(),
+        _ => String::new(),
     }
 }
 
@@ -316,21 +258,21 @@ async fn serve_conn(
         metrics.bytes_in.fetch_add(total as u64, Ordering::Relaxed);
 
         // body = flagBits(4) + sectionKind(1) + BSON document.
-        let (status_bson, reply_bson) = if body.len() < 5 || body[4] != 0x00 {
-            (false, bson_reply(b""))
+        let reply_bson = if body.len() < 5 || body[4] != 0x00 {
+            bson_reply("")
         } else {
             match parse_command(&body[5..]) {
                 Some((cmd, payload)) => {
                     let args = command_args(&cmd, payload);
                     match backend.respond(&cmd, args) {
-                        Ok(value) => (true, bson_reply(&value_to_bytes(value))),
-                        Err(message) => (false, bson_reply(message.as_bytes())),
+                        Ok(value) => bson_reply(&value_to_string(value)),
+                        Err(message) => bson_reply(&message),
                     }
                 }
-                None => (false, bson_reply(b"")),
+                None => bson_reply(""),
             }
         };
-        let _ = status_bson; // reply doc always carries ok:1 in this peer's shape
+        let Ok(reply_bson) = reply_bson else { break };
 
         let frame = encode_op_msg(next_response_id(request_id), request_id, &reply_bson);
         if writer.write_all(&frame).await.is_err() {
@@ -356,9 +298,9 @@ fn next_response_id(request_id: i32) -> i32 {
 
 /// Turn a parsed `(cmd, payload)` into backend args: ECHO carries the payload,
 /// the sentinels carry nothing.
-fn command_args(cmd: &str, payload: Vec<u8>) -> Vec<Value> {
+fn command_args(cmd: &str, payload: String) -> Vec<Value> {
     match cmd {
-        "ECHO" if !payload.is_empty() => vec![Value::Bytes(payload)],
+        "ECHO" if !payload.is_empty() => vec![Value::Str(payload)],
         _ => vec![],
     }
 }
@@ -409,19 +351,22 @@ async fn read_reply(reader: &mut BufReader<OwnedReadHalf>) -> Result<(), String>
 
 /// Build one request frame from the matrix `(command, args)`.
 fn build_mongodb_request(command: &str, args: &[Value]) -> Result<Vec<u8>, String> {
-    let payload: Vec<u8> = match args.first() {
-        Some(value) => value_bytes(value)?,
-        None => Vec::new(),
+    let payload: String = match args.first() {
+        Some(value) => value_text(value)?,
+        None => String::new(),
     };
-    let bson = bson_command(command, &payload);
+    let bson = bson_command(command, &payload)?;
     Ok(encode_op_msg(1, 0, &bson))
 }
 
-/// A matrix arg as raw payload bytes.
-fn value_bytes(value: &Value) -> Result<Vec<u8>, String> {
+/// A matrix arg as the payload text. BSON strings are UTF-8, so a non-UTF-8
+/// payload is refused rather than silently mangled — the matrix's payloads are
+/// ASCII by construction.
+fn value_text(value: &Value) -> Result<String, String> {
     match value {
-        Value::Str(s) => Ok(s.clone().into_bytes()),
-        Value::Bytes(b) => Ok(b.clone()),
+        Value::Str(s) => Ok(s.clone()),
+        Value::Bytes(b) => String::from_utf8(b.clone())
+            .map_err(|_| "mongodb lane: BSON string payloads must be UTF-8".to_owned()),
         other => Err(format!("mongodb lane: unsupported arg {other:?}")),
     }
 }
@@ -600,15 +545,15 @@ mod tests {
 
     #[test]
     fn command_doc_round_trips() {
-        let doc = bson_command("ECHO", b"hello world");
+        let doc = bson_command("ECHO", "hello world").unwrap();
         let (cmd, payload) = parse_command(&doc).unwrap();
         assert_eq!(cmd, "ECHO");
-        assert_eq!(payload, b"hello world");
+        assert_eq!(payload, "hello world");
     }
 
     #[test]
     fn empty_payload_round_trips() {
-        let doc = bson_command("PING", b"");
+        let doc = bson_command("PING", "").unwrap();
         let (cmd, payload) = parse_command(&doc).unwrap();
         assert_eq!(cmd, "PING");
         assert!(payload.is_empty());
@@ -616,64 +561,43 @@ mod tests {
 
     #[test]
     fn bson_length_prefix_is_the_whole_document() {
-        let doc = bson_command("ECHO", b"xyz");
+        let doc = bson_command("ECHO", "xyz").unwrap();
         let declared = i32::from_le_bytes([doc[0], doc[1], doc[2], doc[3]]) as usize;
         assert_eq!(declared, doc.len(), "BSON length prefix must cover the doc");
         assert_eq!(*doc.last().unwrap(), 0, "doc ends with the terminator");
     }
 
     /// Read the `r` string field out of a reply document.
-    fn reply_r(doc: &[u8]) -> Vec<u8> {
-        // Reuse the generic walk but look for "r".
-        let mut i = 4;
-        while i < doc.len() {
-            let tag = doc[i];
-            if tag == 0 {
-                break;
-            }
-            i += 1;
-            let name_start = i;
-            while i < doc.len() && doc[i] != 0 {
-                i += 1;
-            }
-            let name = &doc[name_start..i];
-            i += 1;
-            match tag {
-                BSON_STRING => {
-                    let len =
-                        i32::from_le_bytes([doc[i], doc[i + 1], doc[i + 2], doc[i + 3]]) as usize;
-                    i += 4;
-                    let value = doc[i..i + len - 1].to_vec();
-                    i += len;
-                    if name == b"r" {
-                        return value;
-                    }
-                }
-                BSON_INT32 => i += 4,
-                _ => break,
-            }
-        }
-        Vec::new()
+    fn reply_r(bytes: &[u8]) -> String {
+        let document = Document::from_reader(bytes).unwrap();
+        assert_eq!(document.get_i32("ok").unwrap(), 1, "replies carry ok:1");
+        document.get_str("r").unwrap().to_owned()
     }
 
     #[test]
     fn echo_reply_carries_the_payload() {
-        let request = bson_command("ECHO", &b"x".repeat(64));
+        let request = bson_command("ECHO", &"x".repeat(64)).unwrap();
         let (cmd, payload) = parse_command(&request).unwrap();
         let backend = NoopBackend::new();
         let value = backend.respond(&cmd, command_args(&cmd, payload)).unwrap();
-        let reply = bson_reply(&value_to_bytes(value));
-        assert_eq!(reply_r(&reply), b"x".repeat(64));
+        let reply = bson_reply(&value_to_string(value)).unwrap();
+        assert_eq!(reply_r(&reply), "x".repeat(64));
     }
 
     #[test]
     fn static_reply_is_4kib() {
-        let request = bson_command("STATIC", b"");
+        let request = bson_command("STATIC", "").unwrap();
         let (cmd, payload) = parse_command(&request).unwrap();
         let backend = NoopBackend::new();
         let value = backend.respond(&cmd, command_args(&cmd, payload)).unwrap();
-        let reply = bson_reply(&value_to_bytes(value));
+        let reply = bson_reply(&value_to_string(value)).unwrap();
         assert_eq!(reply_r(&reply).len(), STATIC_REPLY_BYTES);
+    }
+
+    #[test]
+    fn non_utf8_payloads_are_refused_not_mangled() {
+        let err = build_mongodb_request("ECHO", &[Value::Bytes(vec![0xff, 0xfe])]).unwrap_err();
+        assert!(err.contains("UTF-8"), "unexpected error: {err}");
     }
 
     #[test]

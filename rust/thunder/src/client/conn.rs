@@ -434,6 +434,16 @@ impl Client {
         lock(&self.handshake_info).authenticated
     }
 
+    /// `true` while the current connection is live — not poisoned (CLT-014)
+    /// and not closed (CLT-004). The optional pool (CLT-080) uses this to drop
+    /// a dead connection instead of handing it back; ordinary callers rely on
+    /// typed call errors and lazy reconnect (CLT-030) rather than polling this.
+    pub fn is_alive(&self) -> bool {
+        lock(&self.conn)
+            .as_ref()
+            .is_some_and(|conn| conn.is_alive())
+    }
+
     /// Capabilities the server advertised in the `HELLO` reply.
     pub fn capabilities(&self) -> Vec<String> {
         lock(&self.handshake_info).capabilities.clone()

@@ -83,21 +83,35 @@ CancellationToken) is expected; semantics below are not negotiable.
 
 ## 7. Endpoints
 
-- **CLT-070** [P0] The endpoint parser SHALL accept `scheme://host[:port]` for every registered
-  profile scheme (PRO-012) plus bare `host:port` (RPC implied — the caller supplies the profile).
-  `http(s)://` URLs are rejected with a pointer to the product's HTTP client — Thunder is
-  RPC-only.
-- **CLT-071** [P0] Scheme → default port resolution comes from the profile registry; products
-  never fork the parser.
+- **CLT-070** [P0] The endpoint parser SHALL take the caller's `Config` and accept
+  `scheme://host[:port]` for **that config's** scheme, plus bare `host:port` (RPC implied — the
+  caller supplies the config). It carries **no** table of schemes to search: a scheme Thunder has
+  never heard of works because the application configured it (SPEC-002 PRO-012). `http(s)://` URLs
+  are rejected with a pointer to the product's HTTP client — Thunder is RPC-only.
+- **CLT-071** [P0] A missing port resolves to the config's `default_port` (PRO-012); products never
+  fork the parser.
 
 ## 8. Pooling
 
-- **CLT-080** [P1] An optional pool (fixed N connections, round-robin checkout, no
-  bb8/deadpool-style lifecycle) MAY ship per language, mirroring the Vectorizer pattern. The
-  single-connection client is the primary contract.
-  **Swap note**: Vectorizer's SDKs ship a pool today — until CLT-080 lands, the swap keeps a thin
-  product-side pool wrapper over Thunder clients (the existing ~150-LOC pattern), so the swap is
-  never blocked on this requirement.
+- **CLT-080** [P0] Every language SHALL ship an optional connection pool: a fixed maximum number of
+  connections bounded by a semaphore permit, **lazy** connect on first checkout, an idle list, and a
+  checkout/return guard in the language's idiom (RAII `Drop`, `IDisposable`/`await using`, a context
+  manager, or an explicit `release()` in `finally`). It takes a `Config` + `ClientConfig` and builds
+  the same `Client` as `connect_with` — no registry, no scheme table, no product name (SPEC-002
+  PRO-010/PRO-012). It adds **no wire behavior**: the single-connection client stays the primary
+  contract (CLT-001), and `max_in_flight` (CLT-012) remains a *per-connection* bound the pool does
+  not re-interpret.
+  It is deliberately minimal — **no** health checks, background reaping or min-idle warmup, and
+  **not** an external pool crate (bb8/deadpool/r2d2 bring async traits and reconnect logic this layer
+  does not need). A connection poisoned on return (CLT-014) is **dropped, not reused**; the next
+  checkout connects fresh, leaving reconnect to CLT-030.
+  **Why [P0] and uniform, not `MAY`**: shipping it in one language and not another recreates the
+  per-product pool fork this standard exists to end (the worst of the three outcomes). Under the
+  mandatory-`HELLO` standard a new connection costs a handshake round trip, so a caller that opens a
+  connection per operation pays it every time — the failure Nexus (per-request REST client) and
+  Vectorizer's Raft (per-RPC channel) each hit as TIME_WAIT exhaustion. `N` operations over a
+  checked-out connection SHALL pay **one** connect and **one** handshake, not `N` (corpus-adjacent
+  behavioral test, per language).
 
 ## 9. The behavioral floor suite
 

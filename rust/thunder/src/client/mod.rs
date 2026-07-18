@@ -31,10 +31,12 @@
 mod conn;
 mod endpoint;
 mod error;
+mod pool;
 
 pub use conn::{Client, ClientConfig, Credentials, HandshakeInfo};
 pub use endpoint::{parse_endpoint, Endpoint};
 pub use error::ClientError;
+pub use pool::{Pool, PooledConn};
 
 // The wire layer lives at `thunder::wire`; re-export the two types that
 // surface in this module's public API for ergonomics.

@@ -37,7 +37,9 @@ pub use tls::{ClientTls, ServerTls};
 pub mod client;
 
 #[cfg(feature = "client")]
-pub use client::{parse_endpoint, Client, ClientConfig, ClientError, Endpoint, HandshakeInfo};
+pub use client::{
+    parse_endpoint, Client, ClientConfig, ClientError, Endpoint, HandshakeInfo, Pool, PooledConn,
+};
 
 #[cfg(feature = "server")]
 pub mod server;

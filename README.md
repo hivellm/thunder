@@ -173,6 +173,27 @@ credentials is its own config (`auth_required`). A client with no credentials si
 
 Convergence is then visible and per-application: delete overrides until only identity remains.
 
+### TLS (optional, off by default)
+
+TLS is an additive capability, not a dialect (SPEC-008 CAN-020). The Rust stack ships one optional `tokio-rustls` layer behind the `tls` feature — **off by default**, no STARTTLS, decided at connect time. A deployment turns it on at both ends; an off TLS option cannot break a plaintext client.
+
+```toml
+# Cargo.toml — opt into the layer
+thunder-rpc = { version = "0.1", features = ["tls"] }
+```
+
+```rust
+// Server: wrap every accepted stream (SRV-040)
+let listener = ListenerConfig::new(addr)
+    .with_tls(ServerTls { cert_path: "cert.pem".into(), key_path: "key.pem".into() });
+
+// Client: verify against a pinned CA (or the native root store when ca_path is None) — FR-29
+let cfg = ClientConfig::new()
+    .with_tls(ClientTls { server_name: Some("myhost".into()), ca_path: Some("cert.pem".into()) });
+```
+
+A client or server configured with TLS but built without the `tls` feature fails fast (a `Connection` error / a listener that won't start) rather than silently running plaintext. The TypeScript / Python / C# client TLS options are a fast-follow.
+
 ## ✅ Conformance
 
 - **Golden-vector corpus** (`conformance/vectors/`) — language-neutral data files pairing exact frame bytes with expected decoded structure: the canonical PING/PONG pair, the full value matrix (NaN, `i64::MIN/MAX`, empty containers, non-string map keys), framing edges (partial frames, cap+1 rejection **without allocation**), and legacy-tolerance vectors (Synap int-array `Bytes`, map-shaped `Request` — decoded forever, never emitted).

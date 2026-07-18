@@ -23,6 +23,13 @@ rmp-serde = { workspace = true }
 serde_bytes = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
+# TLS (SPEC-008 CAN-020 / SRV-040 / FR-29) — optional, off by default. rustls
+# via tokio-rustls, pinned to the `ring` crypto provider (prebuilt asm, no cmake
+# / OpenSSL / system dependency — lighter and more portable in CI than the
+# default aws-lc-rs, which builds a C library).
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12", "ring"], optional = true }
+rustls-pemfile = { version = "2", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
 
 [features]
 # The wire layer is always compiled. `client` and `server` are additive and
@@ -33,10 +40,16 @@ default = ["client", "server"]
 tokio = ["dep:tokio"]
 client = ["tokio"]
 server = ["tokio"]
+# Optional TLS transport (SPEC-008 CAN-020). Additive: the default build stays
+# plaintext-only and carries no rustls dependency.
+tls = ["dep:tokio-rustls", "dep:rustls-pemfile", "dep:rustls-native-certs"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde_yaml = "0.9"
+# Self-signed cert generation for the TLS round-trip tests (feature `tls` only).
+# Pinned to `ring` to match the library's crypto provider (no aws-lc C build).
+rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
 # TST-030: the family's shipping reference implementation, used by
 # tests/cross_decode.rs to pin Thunder to the reference, not to itself.
 nexus-protocol = "2.5"

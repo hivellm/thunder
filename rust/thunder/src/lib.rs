@@ -29,6 +29,10 @@ pub use wire::{
     Value, DEFAULT_MAX_FRAME_BYTES, PUSH_ID,
 };
 
+pub mod tls;
+
+pub use tls::{ClientTls, ServerTls};
+
 #[cfg(feature = "client")]
 pub mod client;
 

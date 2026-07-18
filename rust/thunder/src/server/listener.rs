@@ -18,7 +18,6 @@ use std::time::{Duration, Instant};
 use crate::wire::config::{Config, ErrorConvention, Handshake, HelloStyle, PushPolicy};
 use crate::wire::{encode_frame, read_request_with_limit, Request, Response, Value, PUSH_ID};
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch, Semaphore};
 
@@ -72,18 +71,31 @@ pub struct ListenerConfig {
     /// Ignored under [`Handshake::None`], which has no gate at all. Defaults
     /// to `true`: a deployment opens up only by saying so.
     pub auth_required: bool,
+    /// Optional TLS (SRV-040 / SPEC-008 CAN-020). `Some` turns TLS on for this
+    /// deployment; `None` (the default) keeps it plaintext. Requires the crate's
+    /// `tls` feature — a listener configured with TLS but built without it fails
+    /// to start rather than silently serving plaintext.
+    pub tls: Option<crate::tls::ServerTls>,
 }
 
 impl ListenerConfig {
     /// Config for `addr` with the defaults: no idle timeout, 1000 ms slow
-    /// threshold, credentials enforced.
+    /// threshold, credentials enforced, plaintext.
     pub fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
             idle_timeout: Duration::ZERO,
             slow_threshold: Duration::from_millis(1000),
             auth_required: true,
+            tls: None,
         }
+    }
+
+    /// Turn TLS on for this deployment (SRV-040): the listener wraps every
+    /// accepted stream in `tokio-rustls` before the first Thunder frame.
+    pub fn with_tls(mut self, tls: crate::tls::ServerTls) -> Self {
+        self.tls = Some(tls);
+        self
     }
 
     /// Serve un-credentialed sessions — the `auth_required = false` /
@@ -113,6 +125,10 @@ struct ConnShared<D> {
     slow_threshold: Duration,
     auth_required: bool,
     metrics: Arc<Metrics>,
+    /// Built once from `ListenerConfig.tls`; every accepted stream is wrapped
+    /// through it before the first frame (SRV-040).
+    #[cfg(feature = "tls")]
+    acceptor: Option<tokio_rustls::TlsAcceptor>,
 }
 
 /// Handle to a running listener (SRV-001).
@@ -167,6 +183,25 @@ pub async fn spawn_listener<D: Dispatch>(
     info: ServerInfo,
     config: ListenerConfig,
 ) -> io::Result<ListenerHandle> {
+    // SRV-040: build the TLS acceptor before binding so a misconfigured cert
+    // fails fast. A TLS config without the `tls` feature is a hard error, not a
+    // silent downgrade to plaintext.
+    #[cfg(feature = "tls")]
+    let acceptor = match &config.tls {
+        Some(tls) => Some(
+            crate::tls::build_acceptor(tls)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?,
+        ),
+        None => None,
+    };
+    #[cfg(not(feature = "tls"))]
+    if config.tls.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "TLS is configured but the crate was built without the `tls` feature",
+        ));
+    }
+
     let listener = TcpListener::bind(config.addr).await?;
     let local_addr = listener.local_addr()?;
     let metrics = Arc::new(Metrics::default());
@@ -181,6 +216,8 @@ pub async fn spawn_listener<D: Dispatch>(
         slow_threshold: config.slow_threshold,
         auth_required: config.auth_required,
         metrics: Arc::clone(&metrics),
+        #[cfg(feature = "tls")]
+        acceptor,
     });
 
     tokio::spawn(accept_loop(listener, shared, shutdown_rx, done_tx));
@@ -235,14 +272,59 @@ async fn handle_connection<D: Dispatch>(
     stream: TcpStream,
     ctx: &ConnShared<D>,
     conn_id: u64,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
 ) {
     // SRV-008: disable Nagle so length-prefixed replies are not held ~40 ms
     // by the delayed-ACK interaction documented in the Synap listener.
     let _ = stream.set_nodelay(true);
-    let (read_half, write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
 
+    // SRV-040: when this deployment configured TLS, complete the TLS handshake
+    // before any Thunder frame. A TLS failure ends this connection only, never
+    // the listener (SRV-004). The plaintext path keeps the lock-free
+    // `into_split`; only the encrypted path pays `tokio::io::split`.
+    #[cfg(feature = "tls")]
+    if let Some(acceptor) = &ctx.acceptor {
+        // A TLS handshake failure ends this connection only (SRV-004).
+        if let Ok(tls) = acceptor.accept(stream).await {
+            let (read_half, write_half) = tokio::io::split(tls);
+            run_connection(
+                BufReader::new(read_half),
+                write_half,
+                ctx,
+                conn_id,
+                shutdown,
+            )
+            .await;
+        }
+        return;
+    }
+
+    let (read_half, write_half) = stream.into_split();
+    run_connection(
+        BufReader::new(read_half),
+        write_half,
+        ctx,
+        conn_id,
+        shutdown,
+    )
+    .await;
+}
+
+/// The connection loop over already-split, transport-agnostic halves — one
+/// monomorphization for plaintext (`OwnedReadHalf`/`OwnedWriteHalf`) and one for
+/// TLS. Splitting here keeps the hot plaintext path byte-identical and
+/// lock-free (SRV-002/003).
+async fn run_connection<D, R, W>(
+    mut reader: BufReader<R>,
+    write_half: W,
+    ctx: &ConnShared<D>,
+    conn_id: u64,
+    mut shutdown: watch::Receiver<bool>,
+) where
+    D: Dispatch,
+    R: tokio::io::AsyncRead + Unpin + Send,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let (tx, rx) = mpsc::channel::<WriteJob>(WRITER_QUEUE_DEPTH);
     let write_task = tokio::spawn(writer_task(
         BufWriter::new(write_half),
@@ -412,8 +494,8 @@ async fn handle_connection<D: Dispatch>(
 /// Read one request bounded by the profile's cap (WIRE-020) and the
 /// optional per-read idle timeout (SRV-009; zero disables). The returned
 /// frame size comes from the decoder's length prefix (SRV-007).
-async fn read_next(
-    reader: &mut BufReader<OwnedReadHalf>,
+async fn read_next<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut BufReader<R>,
     max_frame_bytes: usize,
     idle_timeout: Duration,
 ) -> io::Result<(Request, usize)> {
@@ -449,8 +531,8 @@ async fn send_inline(tx: &mpsc::Sender<WriteJob>, response: Response, in_bytes: 
 /// After writing one job it drains every already-queued job via `try_recv`
 /// before a single `flush()` — the Synap drain-then-flush pattern that
 /// coalesces a pipelined burst into one syscall (SRV-006).
-async fn writer_task(
-    mut writer: BufWriter<OwnedWriteHalf>,
+async fn writer_task<W: tokio::io::AsyncWrite + Unpin>(
+    mut writer: BufWriter<W>,
     mut rx: mpsc::Receiver<WriteJob>,
     metrics: Arc<Metrics>,
     slow_threshold: Duration,
@@ -475,8 +557,8 @@ async fn writer_task(
 /// Encode exactly once, write, record after the successful write
 /// (SRV-007/030). Returns `false` when the writer must stop (write error
 /// or shutdown).
-async fn write_job(
-    writer: &mut BufWriter<OwnedWriteHalf>,
+async fn write_job<W: tokio::io::AsyncWrite + Unpin>(
+    writer: &mut BufWriter<W>,
     job: WriteJob,
     metrics: &Metrics,
     slow_threshold: Duration,

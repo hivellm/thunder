@@ -32,7 +32,6 @@ use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex, Semaphore};
 use tokio::task::JoinHandle;
@@ -86,6 +85,11 @@ pub struct ClientConfig {
     pub credentials: Option<Credentials>,
     /// Client identifier sent in the `HELLO` map (`HelloMandatory`).
     pub client_name: Option<String>,
+    /// Optional TLS (FR-29 / SPEC-008 CAN-020). `Some` dials TLS; `None` (the
+    /// default) keeps plaintext. Requires the crate's `tls` feature — a client
+    /// configured with TLS but built without it fails to connect with a
+    /// `Connection` error rather than silently dialing plaintext.
+    pub tls: Option<crate::tls::ClientTls>,
 }
 
 impl Default for ClientConfig {
@@ -95,6 +99,7 @@ impl Default for ClientConfig {
             call_timeout: Duration::from_secs(30),
             credentials: None,
             client_name: None,
+            tls: None,
         }
     }
 }
@@ -147,6 +152,14 @@ impl ClientConfig {
     #[must_use]
     pub fn client_name(mut self, name: impl Into<String>) -> Self {
         self.client_name = Some(name.into());
+        self
+    }
+
+    /// Dial TLS (FR-29): the client completes a `tokio-rustls` handshake before
+    /// any Thunder frame. Requires the crate's `tls` feature.
+    #[must_use]
+    pub fn with_tls(mut self, tls: crate::tls::ClientTls) -> Self {
+        self.tls = Some(tls);
         self
     }
 }
@@ -225,8 +238,8 @@ impl Conn {
 /// us, drain every frame already queued via `try_recv`, then flush a single
 /// time. A poisoned write kills the connection so every pending call fails
 /// typed (CLT-014).
-async fn writer_loop(
-    write_half: OwnedWriteHalf,
+async fn writer_loop<W: tokio::io::AsyncWrite + Unpin>(
+    write_half: W,
     mut rx: mpsc::Receiver<Vec<u8>>,
     shared: Arc<ConnShared>,
 ) {
@@ -515,6 +528,13 @@ impl Client {
     /// Dial (with the connect timeout, TCP_NODELAY on — CLT-001), spawn
     /// the reader task, and run the profile handshake (CLT-002).
     async fn establish(&self) -> Result<Arc<Conn>, ClientError> {
+        #[cfg(not(feature = "tls"))]
+        if self.client_config.tls.is_some() {
+            return Err(ClientError::Connection {
+                message: "TLS is configured but the crate was built without the `tls` feature"
+                    .to_owned(),
+            });
+        }
         let addr = (self.endpoint.host.as_str(), self.endpoint.port);
         let stream =
             tokio::time::timeout(self.client_config.connect_timeout, TcpStream::connect(addr))
@@ -531,7 +551,51 @@ impl Client {
             .map_err(|e| ClientError::Connection {
                 message: format!("TCP_NODELAY failed: {e}"),
             })?;
-        let (read_half, write_half) = stream.into_split();
+        // CLT-001 / FR-29: when TLS is configured, complete the TLS handshake
+        // before any Thunder frame; a TLS/verification failure is a Connection
+        // error. The plaintext path keeps the lock-free `into_split`; only TLS
+        // pays `tokio::io::split`.
+        #[cfg(feature = "tls")]
+        let conn = if let Some(tls_cfg) = &self.client_config.tls {
+            let connector =
+                crate::tls::build_connector(tls_cfg).map_err(|e| ClientError::Connection {
+                    message: format!("TLS setup failed: {e}"),
+                })?;
+            let server_name = crate::tls::server_name(tls_cfg, &self.endpoint.host)
+                .map_err(|message| ClientError::Connection { message })?;
+            let tls_stream = connector.connect(server_name, stream).await.map_err(|e| {
+                ClientError::Connection {
+                    message: format!("TLS handshake failed: {e}"),
+                }
+            })?;
+            let (read_half, write_half) = tokio::io::split(tls_stream);
+            self.spawn_conn(read_half, write_half)
+        } else {
+            let (read_half, write_half) = stream.into_split();
+            self.spawn_conn(read_half, write_half)
+        };
+        #[cfg(not(feature = "tls"))]
+        let conn = {
+            let (read_half, write_half) = stream.into_split();
+            self.spawn_conn(read_half, write_half)
+        };
+
+        // On handshake failure the `Err` return drops `conn`, whose Drop
+        // aborts the reader and closes the socket.
+        let info = self.handshake(&conn).await?;
+        *lock(&self.handshake_info) = info;
+        Ok(conn)
+    }
+
+    /// Spawn the reader and writer tasks over already-split, transport-agnostic
+    /// halves and assemble the [`Conn`]. One monomorphization for plaintext
+    /// (`OwnedReadHalf`/`OwnedWriteHalf`), one for TLS — the hot plaintext path
+    /// stays byte-identical and lock-free (CLT-010/011).
+    fn spawn_conn<R, W>(&self, read_half: R, write_half: W) -> Arc<Conn>
+    where
+        R: tokio::io::AsyncRead + Unpin + Send + 'static,
+        W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
         let shared = Arc::new(ConnShared {
             pending: StdMutex::new(HashMap::new()),
             alive: AtomicBool::new(true),
@@ -544,22 +608,17 @@ impl Client {
             Arc::clone(&self.push_handler),
             Arc::clone(&self.unknown_drops),
         ));
-        // Bounded so a caller that outruns the socket waits here rather
-        // than growing an unbounded queue; the in-flight semaphore
-        // (CLT-012) already bounds how many can be waiting.
+        // Bounded so a caller that outruns the socket waits here rather than
+        // growing an unbounded queue; the in-flight semaphore (CLT-012) already
+        // bounds how many can be waiting.
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(1024);
         let writer_task = tokio::spawn(writer_loop(write_half, write_rx, Arc::clone(&shared)));
-        let conn = Arc::new(Conn {
+        Arc::new(Conn {
             shared,
             write_tx,
             reader_task,
             writer_task,
-        });
-        // On handshake failure the `Err` return drops `conn`, whose Drop
-        // aborts the reader and closes the socket.
-        let info = self.handshake(&conn).await?;
-        *lock(&self.handshake_info) = info;
-        Ok(conn)
+        })
     }
 
     /// Run the profile handshake before user calls proceed (CLT-002):
@@ -765,8 +824,8 @@ impl Drop for Client {
 /// The background reader (CLT-010): reads frames with the profile cap,
 /// demuxes by id, routes push frames (CLT-060), drops unknown ids
 /// (CLT-013), and poisons the connection on any read failure (CLT-014).
-async fn reader_loop(
-    mut reader: BufReader<OwnedReadHalf>,
+async fn reader_loop<R: tokio::io::AsyncRead + Unpin>(
+    mut reader: BufReader<R>,
     shared: Arc<ConnShared>,
     max_frame_bytes: usize,
     push: PushPolicy,

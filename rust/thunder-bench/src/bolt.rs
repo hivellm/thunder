@@ -809,7 +809,7 @@ fn unpack_value(u: &mut Unpacker<'_>) -> Result<Value, String> {
         PS_BYTES_8 | PS_BYTES_16 | PS_BYTES_32 => {
             let width = 1 << (marker - PS_BYTES_8);
             let length = u.length(width)?;
-            Ok(Value::Bytes(u.take(length)?.to_vec()))
+            Ok(Value::bytes(u.take(length)?.to_vec()))
         }
         0x80..=0x8F => unpack_string(u, usize::from(marker & 0x0F)),
         PS_STRING_8 | PS_STRING_16 | PS_STRING_32 => {
@@ -1285,10 +1285,10 @@ mod tests {
 
     #[test]
     fn packstream_bytes_have_no_tiny_tier() {
-        round_trips(Value::Bytes(vec![1, 2, 3]), &[PS_BYTES_8, 3, 1, 2, 3]);
-        let big = packed(&Value::Bytes(vec![7u8; 300]));
+        round_trips(Value::bytes(vec![1, 2, 3]), &[PS_BYTES_8, 3, 1, 2, 3]);
+        let big = packed(&Value::bytes(vec![7u8; 300]));
         assert_eq!(&big[..3], &[PS_BYTES_16, 0x01, 0x2C]);
-        assert_eq!(unpacked(&big), Value::Bytes(vec![7u8; 300]));
+        assert_eq!(unpacked(&big), Value::bytes(vec![7u8; 300]));
     }
 
     #[test]
@@ -1492,7 +1492,7 @@ mod tests {
         }
         // SINK drops its args and returns null.
         assert_eq!(
-            call(&mut conn, "SINK", &[Value::Bytes(vec![0u8; 64])]).await,
+            call(&mut conn, "SINK", &[Value::bytes(vec![0u8; 64])]).await,
             Value::Null
         );
 

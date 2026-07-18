@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn bytes_emit_as_bin_canonical() {
-        let encoded = rmp_serde::to_vec(&Value::Bytes(vec![1, 2, 3, 255])).unwrap();
+        let encoded = rmp_serde::to_vec(&Value::bytes(vec![1, 2, 3, 255])).unwrap();
         // {"Bytes": bin8(4)} — c4 04, never the int-array form (94 ... cc ff).
         assert_eq!(hex(&encoded), "81 a5 42 79 74 65 73 c4 04 01 02 03 ff");
     }
@@ -247,7 +247,7 @@ mod tests {
             0x94, 0x01, 0x02, 0x03, 0xcc, 0xff, // [1, 2, 3, 255] as ints
         ];
         let decoded: Value = rmp_serde::from_slice(&legacy).unwrap();
-        assert_eq!(decoded, Value::Bytes(vec![1, 2, 3, 255]));
+        assert_eq!(decoded, Value::bytes(vec![1, 2, 3, 255]));
     }
 
     // ── Request shape tolerance (WIRE-012/013) ────────────────────────────
@@ -286,8 +286,8 @@ mod tests {
             Value::Float(-0.0),
             Value::Float(f64::INFINITY),
             Value::Float(f64::NEG_INFINITY),
-            Value::Bytes(vec![]),
-            Value::Bytes(vec![0, 1, 2, 255]),
+            Value::bytes(vec![]),
+            Value::bytes(vec![0, 1, 2, 255]),
             Value::Str(String::new()),
             Value::Str("héllo wörld".to_owned()),
             Value::Array(vec![]),

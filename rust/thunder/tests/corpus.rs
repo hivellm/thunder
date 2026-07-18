@@ -84,7 +84,7 @@ fn node_to_value(n: &Node) -> Value {
             None => Value::Float(n.value.as_f64().unwrap()),
         },
         "str" => Value::Str(n.value.as_str().unwrap().to_owned()),
-        "bytes" => Value::Bytes(parse_hex(n.value.as_str().unwrap())),
+        "bytes" => Value::bytes(parse_hex(n.value.as_str().unwrap())),
         "array" => Value::Array(
             n.value
                 .as_sequence()

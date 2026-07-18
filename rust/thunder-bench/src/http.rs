@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn bytes_map_to_integer_arrays() {
         assert_eq!(
-            wire_to_json(&Value::Bytes(vec![1, 2, 255])),
+            wire_to_json(&Value::bytes(vec![1, 2, 255])),
             serde_json::json!([1, 2, 255])
         );
     }

@@ -453,7 +453,7 @@ async fn read_reply(reader: &mut BufReader<OwnedReadHalf>) -> Result<(), String>
 fn build_thrift_request(command: &str, args: &[Value]) -> Result<Vec<u8>, String> {
     let payload = match args.first() {
         Some(Value::Str(s)) => s.clone(),
-        Some(Value::Bytes(b)) => String::from_utf8(b.clone())
+        Some(Value::Bytes(b)) => String::from_utf8(b.to_vec())
             .map_err(|_| "thrift lane: string payloads must be UTF-8".to_owned())?,
         Some(other) => return Err(format!("thrift lane: unsupported arg {other:?}")),
         None => String::new(),
@@ -702,7 +702,7 @@ mod tests {
 
     #[test]
     fn non_utf8_payloads_are_refused_not_mangled() {
-        let err = build_thrift_request("ECHO", &[Value::Bytes(vec![0xff, 0xfe])]).unwrap_err();
+        let err = build_thrift_request("ECHO", &[Value::bytes(vec![0xff, 0xfe])]).unwrap_err();
         assert!(err.contains("UTF-8"), "unexpected error: {err}");
     }
 }

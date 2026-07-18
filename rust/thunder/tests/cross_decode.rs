@@ -28,7 +28,7 @@ fn to_nexus(v: &Value) -> nexus::NexusValue {
         Value::Bool(b) => nexus::NexusValue::Bool(*b),
         Value::Int(i) => nexus::NexusValue::Int(*i),
         Value::Float(f) => nexus::NexusValue::Float(*f),
-        Value::Bytes(b) => nexus::NexusValue::Bytes(b.clone()),
+        Value::Bytes(b) => nexus::NexusValue::Bytes(b.to_vec()),
         Value::Str(s) => nexus::NexusValue::Str(s.clone()),
         Value::Array(items) => nexus::NexusValue::Array(items.iter().map(to_nexus).collect()),
         Value::Map(pairs) => nexus::NexusValue::Map(
@@ -102,10 +102,10 @@ fn byte_stable_values() -> Vec<Value> {
 /// in both directions, byte equality deliberately skipped (see module doc).
 fn bytes_values() -> Vec<Value> {
     vec![
-        Value::Bytes(vec![]),
-        Value::Bytes(vec![1, 2, 3, 255]),
-        Value::Array(vec![Value::Bytes(vec![0, 128]), s("mixed")]),
-        Value::Map(vec![(s("payload"), Value::Bytes(vec![9, 9, 9]))]),
+        Value::bytes(vec![]),
+        Value::bytes(vec![1, 2, 3, 255]),
+        Value::Array(vec![Value::bytes(vec![0, 128]), s("mixed")]),
+        Value::Map(vec![(s("payload"), Value::bytes(vec![9, 9, 9]))]),
     ]
 }
 
@@ -257,7 +257,7 @@ fn bytes_encodings_differ_between_thunder_and_reference() {
     let req = Request {
         id: 1,
         command: "ECHO".to_owned(),
-        args: vec![Value::Bytes(vec![1, 2, 3, 255])],
+        args: vec![Value::bytes(vec![1, 2, 3, 255])],
     };
     let nexus_req = nexus::Request {
         id: 1,

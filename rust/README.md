@@ -217,6 +217,71 @@ dispersion exceeds 5% (BEN-011) — a benchmark you cannot trust should not
 produce a number. Results and honest caveats:
 [docs/analysis/protocol-shootout/](../docs/analysis/protocol-shootout/).
 
+## Upgrading to 0.2.0
+
+Two breaking changes, both from adopting Thunder in Synap. **The wire is
+untouched** — the corpus is unchanged and the cross-language interop matrix
+still passes 4/4, so no other language lane and no deployed peer is affected.
+Only the Rust types moved.
+
+**1. `Value::Bytes` carries `Arc<[u8]>`, not `Vec<u8>`.**
+
+An owned `Vec` forced a full copy of the payload in *both* directions — once
+reading a value into a store, once handing a stored value to the encoder. It
+scaled with payload size, so it was worst exactly where a binary protocol is
+supposed to win.
+
+```rust
+// before
+Value::Bytes(vec)
+match v { Value::Bytes(b) => b.as_slice(), .. }
+
+// after — construction takes anything that becomes a shared buffer
+Value::bytes(vec)          // or Value::from(vec) / Value::from(arc)
+match v { Value::Bytes(b) => &b[..], .. }
+
+// and the point of the change:
+let shared: Arc<[u8]> = value.into_shared_bytes().unwrap();  // refcount bump
+let value = Value::bytes(Arc::clone(&stored));               // no copy
+```
+
+**2. `Dispatch` has an `Identity` associated type; `Principal` and `Session`
+carry it.**
+
+A product's resolved identity — roles, tenant, quotas — had nowhere to live,
+so authorization had to re-query the credential store on every privileged
+command. That was also a semantic change nobody asked for: the re-read sees
+live state, so a user edited mid-session was judged by the new record.
+
+```rust
+impl Dispatch for MyServer {
+    type Identity = ();          // add this line if the name is enough
+    // …unchanged
+}
+
+// or carry your own, resolved once at AUTH:
+impl Dispatch for MyServer {
+    type Identity = User;
+
+    async fn authenticate(&self, creds: Credentials) -> Result<Principal<User>, AuthError> {
+        let user = self.store.lookup(&creds)?;          // the only lookup
+        Ok(Principal::with_identity(user.name.clone(), user))
+    }
+
+    async fn dispatch(&self, session: &Session<User>, command: &str, args: Vec<Value>)
+        -> Result<Value, String>
+    {
+        // Reads memory. No store round-trip, no String clone.
+        let is_admin = session.with_principal(|p| p.is_some_and(|p| p.identity.is_admin));
+        // …
+    }
+}
+```
+
+`Principal<I = ()>` and `Session<I = ()>` default their parameter, so the
+simple case stays short. `type Identity = ();` is still required on every impl
+— Rust has no stable associated-type defaults.
+
 ## Specs
 
 | Spec | Covers |

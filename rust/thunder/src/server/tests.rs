@@ -27,6 +27,8 @@ struct EchoDispatch {
 }
 
 impl Dispatch for EchoDispatch {
+    type Identity = ();
+
     async fn dispatch(
         &self,
         session: &Session,
@@ -58,15 +60,13 @@ impl Dispatch for EchoDispatch {
 
     async fn authenticate(&self, creds: Credentials) -> Result<Principal, AuthError> {
         match creds {
-            Credentials::ApiKey(key) if key == "key-1" => Ok(Principal {
-                name: "api-key".to_owned(),
-            }),
+            Credentials::ApiKey(key) if key == "key-1" => Ok(Principal::new("api-key".to_owned())),
             Credentials::UserPass(user, pass) if user == "root" && pass == "hunter2" => {
-                Ok(Principal { name: user })
+                Ok(Principal::new(user))
             }
-            Credentials::Token(token) if token == "tok-1" => Ok(Principal {
-                name: "token-user".to_owned(),
-            }),
+            Credentials::Token(token) if token == "tok-1" => {
+                Ok(Principal::new("token-user".to_owned()))
+            }
             _ => Err(AuthError::InvalidCredentials),
         }
     }
@@ -891,4 +891,162 @@ async fn no_observer_means_no_observer_work() {
     let _ = call(&mut conn, 1, "PING", vec![]).await;
     // The built-in metrics still record, unchanged.
     assert_eq!(handle.snapshot().commands_total, 1);
+}
+
+// ── GH #4: product identity on the session (0.2.0) ──────────────────────────
+
+/// A product's own resolved user, exactly the shape Synap had before the swap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct User {
+    is_admin: bool,
+    tenant: String,
+}
+
+/// Stands in for a product whose credential store is expensive to consult:
+/// it counts lookups, so a test can prove authorization no longer performs
+/// one per command.
+#[derive(Default)]
+struct AclDispatch {
+    lookups: AtomicUsize,
+}
+
+impl Dispatch for AclDispatch {
+    type Identity = User;
+
+    async fn dispatch(
+        &self,
+        session: &Session<User>,
+        command: &str,
+        _args: Vec<Value>,
+    ) -> Result<Value, String> {
+        match command {
+            // The authorization path the issue was filed about: read a field
+            // off the session, no store lookup, no String clone.
+            "ADMIN_ONLY" => {
+                let is_admin = session.with_principal(|p| p.is_some_and(|p| p.identity.is_admin));
+                if is_admin {
+                    Ok(Value::Str("granted".to_owned()))
+                } else {
+                    Err(crate::server::NOPERM.to_owned())
+                }
+            }
+            "WHOAMI" => Ok(Value::Str(
+                session
+                    .principal_name()
+                    .unwrap_or_else(|| "anon".to_owned()),
+            )),
+            "TENANT" => Ok(Value::Str(session.with_principal(|p| {
+                p.map(|p| p.identity.tenant.clone()).unwrap_or_default()
+            }))),
+            _ => Ok(Value::Null),
+        }
+    }
+
+    async fn authenticate(&self, creds: Credentials) -> Result<Principal<User>, AuthError> {
+        // The one and only store lookup: at AUTH, not per command.
+        self.lookups.fetch_add(1, AtomicOrdering::Relaxed);
+        match creds {
+            Credentials::UserPass(user, pass) if pass == "pw" => Ok(Principal::with_identity(
+                user.clone(),
+                User {
+                    is_admin: user == "root",
+                    tenant: "acme".to_owned(),
+                },
+            )),
+            _ => Err(AuthError::InvalidCredentials),
+        }
+    }
+}
+
+async fn start_acl() -> (ListenerHandle, Arc<AclDispatch>) {
+    let dispatch = Arc::new(AclDispatch::default());
+    let handle = spawn_listener(
+        Arc::clone(&dispatch),
+        auth_command_config(),
+        info(),
+        config(),
+    )
+    .await
+    .unwrap();
+    (handle, dispatch)
+}
+
+/// The identity resolved at AUTH reaches the dispatch path, and authorization
+/// reads it **without** going back to the credential store.
+#[tokio::test]
+async fn the_product_identity_survives_to_authorization_without_a_second_lookup() {
+    let (handle, dispatch) = start_acl().await;
+    let mut conn = connect(&handle).await;
+
+    let auth = call(
+        &mut conn,
+        1,
+        "AUTH",
+        vec![Value::Str("root".to_owned()), Value::Str("pw".to_owned())],
+    )
+    .await;
+    assert!(auth.result.is_ok(), "AUTH should succeed: {auth:?}");
+    assert_eq!(dispatch.lookups.load(AtomicOrdering::Relaxed), 1);
+
+    // Ten privileged commands, all authorized from the session.
+    for id in 2..=11 {
+        let response = call(&mut conn, id, "ADMIN_ONLY", vec![]).await;
+        assert_eq!(response.result.unwrap(), Value::Str("granted".to_owned()));
+    }
+
+    assert_eq!(
+        dispatch.lookups.load(AtomicOrdering::Relaxed),
+        1,
+        "authorization must read the session, not re-resolve the user per command"
+    );
+}
+
+/// The identity is captured at AUTH and stays stable for the session — the
+/// pre-Thunder semantics, restored. A store that changes underneath does not
+/// retroactively change what this connection is authorized to do.
+#[tokio::test]
+async fn identity_is_captured_at_auth_not_re_read_per_command() {
+    let (handle, _d) = start_acl().await;
+    let mut conn = connect(&handle).await;
+
+    let _ = call(
+        &mut conn,
+        1,
+        "AUTH",
+        vec![Value::Str("root".to_owned()), Value::Str("pw".to_owned())],
+    )
+    .await;
+
+    let tenant = call(&mut conn, 2, "TENANT", vec![]).await;
+    assert_eq!(tenant.result.unwrap(), Value::Str("acme".to_owned()));
+    let who = call(&mut conn, 3, "WHOAMI", vec![]).await;
+    assert_eq!(who.result.unwrap(), Value::Str("root".to_owned()));
+}
+
+/// A non-admin is refused by the same path, proving the field is read rather
+/// than assumed.
+#[tokio::test]
+async fn a_non_admin_identity_is_refused() {
+    let (handle, _d) = start_acl().await;
+    let mut conn = connect(&handle).await;
+
+    let _ = call(
+        &mut conn,
+        1,
+        "AUTH",
+        vec![Value::Str("alice".to_owned()), Value::Str("pw".to_owned())],
+    )
+    .await;
+
+    let denied = call(&mut conn, 2, "ADMIN_ONLY", vec![]).await;
+    assert!(denied.result.is_err(), "a non-admin must be refused");
+}
+
+/// `Principal::new` and the `()` default keep the simple case a one-liner for
+/// products that only ever needed a name.
+#[test]
+fn the_identity_defaults_to_unit_for_products_that_do_not_need_one() {
+    let principal = Principal::new("someone");
+    assert_eq!(principal.name, "someone");
+    assert_eq!(principal.identity, ());
 }

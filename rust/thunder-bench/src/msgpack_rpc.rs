@@ -770,7 +770,7 @@ mod tests {
 
     #[test]
     fn bin_and_nil_payloads_scan() {
-        let bytes = encode_request(1, "SINK", &[Value::Bytes(vec![0u8; 1000])]).unwrap();
+        let bytes = encode_request(1, "SINK", &[Value::bytes(vec![0u8; 1000])]).unwrap();
         assert_eq!(scan_value(&bytes, 0).unwrap(), bytes.len());
         let reply = encode_response(1, Value::Null, Value::Null).unwrap();
         assert_eq!(scan_value(&reply, 0).unwrap(), reply.len());

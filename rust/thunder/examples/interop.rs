@@ -29,6 +29,8 @@ fn app_config() -> Config {
 struct Echo;
 
 impl Dispatch for Echo {
+    type Identity = ();
+
     async fn dispatch(
         &self,
         _session: &Session,
@@ -43,9 +45,7 @@ impl Dispatch for Echo {
     }
 
     async fn authenticate(&self, _creds: Credentials) -> Result<Principal, AuthError> {
-        Ok(Principal {
-            name: "interop".to_owned(),
-        })
+        Ok(Principal::new("interop".to_owned()))
     }
 }
 

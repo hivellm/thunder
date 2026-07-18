@@ -23,6 +23,8 @@ use thunder::{Client, ClientConfig, ClientError, ClientTls, Config, ServerTls, V
 struct Echo;
 
 impl Dispatch for Echo {
+    type Identity = ();
+
     async fn dispatch(
         &self,
         _session: &Session,
@@ -41,9 +43,7 @@ impl Dispatch for Echo {
     }
 
     async fn authenticate(&self, _creds: Credentials) -> Result<Principal, AuthError> {
-        Ok(Principal {
-            name: "tls-test".to_owned(),
-        })
+        Ok(Principal::new("tls-test".to_owned()))
     }
 }
 

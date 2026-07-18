@@ -62,6 +62,8 @@ impl Default for NoopBackend {
 }
 
 impl Dispatch for NoopBackend {
+    type Identity = ();
+
     async fn dispatch(
         &self,
         _session: &Session,
@@ -74,9 +76,7 @@ impl Dispatch for NoopBackend {
     /// The bench profile uses `Handshake::None`, so this hook is never on
     /// the measured path; it accepts everything for completeness.
     async fn authenticate(&self, _creds: Credentials) -> Result<Principal, AuthError> {
-        Ok(Principal {
-            name: "bench".to_owned(),
-        })
+        Ok(Principal::new("bench".to_owned()))
     }
 }
 
@@ -117,7 +117,7 @@ mod tests {
     fn sink_discards_args_and_returns_null() {
         let backend = NoopBackend::new();
         let reply = backend
-            .respond("SINK", vec![Value::Bytes(vec![0u8; 1024])])
+            .respond("SINK", vec![Value::bytes(vec![0u8; 1024])])
             .unwrap();
         assert_eq!(reply, Value::Null);
     }

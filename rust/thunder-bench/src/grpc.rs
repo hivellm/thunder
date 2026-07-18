@@ -455,7 +455,7 @@ async fn call(channel: Channel, request: BenchRequest) -> Result<(), String> {
 fn build_request(command: &str, args: &[Value]) -> Result<BenchRequest, String> {
     let payload = match args.first() {
         Some(Value::Str(s)) => s.clone(),
-        Some(Value::Bytes(b)) => String::from_utf8(b.clone())
+        Some(Value::Bytes(b)) => String::from_utf8(b.to_vec())
             .map_err(|_| "grpc lane: protobuf string payloads must be UTF-8".to_owned())?,
         Some(other) => return Err(format!("grpc lane: unsupported arg {other:?}")),
         None => String::new(),
@@ -678,7 +678,7 @@ mod tests {
 
     #[test]
     fn non_utf8_payloads_are_refused_not_mangled() {
-        let err = build_request("ECHO", &[Value::Bytes(vec![0xff, 0xfe])]).unwrap_err();
+        let err = build_request("ECHO", &[Value::bytes(vec![0xff, 0xfe])]).unwrap_err();
         assert!(err.contains("UTF-8"), "unexpected error: {err}");
     }
 }

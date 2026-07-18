@@ -387,7 +387,7 @@ fn build_postgres_request(command: &str, args: &[Value]) -> Result<Vec<u8>, Stri
 fn value_bytes(value: &Value) -> Result<Vec<u8>, String> {
     match value {
         Value::Str(s) => Ok(s.clone().into_bytes()),
-        Value::Bytes(b) => Ok(b.clone()),
+        Value::Bytes(b) => Ok(b.to_vec()),
         other => Err(format!("postgres lane: unsupported arg {other:?}")),
     }
 }
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn nul_payloads_are_refused_not_truncated() {
-        let err = build_postgres_request("ECHO", &[Value::Bytes(vec![b'a', 0, b'b'])]).unwrap_err();
+        let err = build_postgres_request("ECHO", &[Value::bytes(vec![b'a', 0, b'b'])]).unwrap_err();
         assert!(err.contains("NUL-free"), "unexpected error: {err}");
     }
 }

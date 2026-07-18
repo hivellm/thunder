@@ -245,7 +245,7 @@ fn classify(key: &[u8]) -> (&'static str, Vec<Value>) {
         b"SINK" => ("SINK", vec![]),
         b"PING" => ("PING", vec![]),
         b"ECHO" => ("ECHO", vec![]),
-        other => ("ECHO", vec![Value::Bytes(other.to_vec())]),
+        other => ("ECHO", vec![Value::bytes(other.to_vec())]),
     }
 }
 
@@ -253,7 +253,7 @@ fn classify(key: &[u8]) -> (&'static str, Vec<Value>) {
 fn value_to_bytes(value: Value) -> Vec<u8> {
     match value {
         Value::Str(s) => s.into_bytes(),
-        Value::Bytes(b) => b,
+        Value::Bytes(b) => b.to_vec(),
         _ => Vec::new(),
     }
 }
@@ -364,7 +364,7 @@ fn build_memcached_request(command: &str, args: &[Value]) -> Result<Vec<u8>, Str
 fn value_bytes(value: &Value) -> Result<Vec<u8>, String> {
     match value {
         Value::Str(s) => Ok(s.clone().into_bytes()),
-        Value::Bytes(b) => Ok(b.clone()),
+        Value::Bytes(b) => Ok(b.to_vec()),
         other => Err(format!("memcached lane: unsupported arg {other:?}")),
     }
 }

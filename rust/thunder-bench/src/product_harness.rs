@@ -114,6 +114,8 @@ struct DispatchAdapter<H> {
 }
 
 impl<H: ProductHandler> Dispatch for DispatchAdapter<H> {
+    type Identity = ();
+
     async fn dispatch(
         &self,
         _session: &Session,
@@ -126,9 +128,7 @@ impl<H: ProductHandler> Dispatch for DispatchAdapter<H> {
     /// The harness profile uses `Handshake::None`, so this never runs on the
     /// measured path; it accepts everything for completeness.
     async fn authenticate(&self, _creds: Credentials) -> Result<Principal, AuthError> {
-        Ok(Principal {
-            name: "product-harness".to_owned(),
-        })
+        Ok(Principal::new("product-harness".to_owned()))
     }
 }
 
@@ -177,7 +177,7 @@ impl ProductScenario {
     pub fn request(self) -> (&'static str, Vec<Value>) {
         match self {
             Self::BulkIngest => {
-                let item = Value::Bytes(vec![b'x'; BULK_ITEM_BYTES]);
+                let item = Value::bytes(vec![b'x'; BULK_ITEM_BYTES]);
                 let batch = std::iter::repeat_n(item, BULK_ITEMS).collect();
                 ("INGEST", vec![Value::Array(batch)])
             }
@@ -858,7 +858,7 @@ impl ProductHandler for DemoEngine {
                 *lock(&self.ingested) += count;
                 Ok(Value::Int(count as i64))
             }
-            "GET" | "POLL" | "PING" => Ok(Value::Bytes(self.value.clone())),
+            "GET" | "POLL" | "PING" => Ok(Value::bytes(self.value.clone())),
             other => Err(format!("ERR unknown command '{other}'")),
         }
     }

@@ -365,7 +365,7 @@ fn build_mongodb_request(command: &str, args: &[Value]) -> Result<Vec<u8>, Strin
 fn value_text(value: &Value) -> Result<String, String> {
     match value {
         Value::Str(s) => Ok(s.clone()),
-        Value::Bytes(b) => String::from_utf8(b.clone())
+        Value::Bytes(b) => String::from_utf8(b.to_vec())
             .map_err(|_| "mongodb lane: BSON string payloads must be UTF-8".to_owned()),
         other => Err(format!("mongodb lane: unsupported arg {other:?}")),
     }
@@ -596,7 +596,7 @@ mod tests {
 
     #[test]
     fn non_utf8_payloads_are_refused_not_mangled() {
-        let err = build_mongodb_request("ECHO", &[Value::Bytes(vec![0xff, 0xfe])]).unwrap_err();
+        let err = build_mongodb_request("ECHO", &[Value::bytes(vec![0xff, 0xfe])]).unwrap_err();
         assert!(err.contains("UTF-8"), "unexpected error: {err}");
     }
 

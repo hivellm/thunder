@@ -298,7 +298,7 @@ fn split_request(bytes: &[u8]) -> (String, Vec<u8>) {
 fn value_to_bytes(value: Value) -> Vec<u8> {
     match value {
         Value::Str(s) => s.into_bytes(),
-        Value::Bytes(b) => b,
+        Value::Bytes(b) => b.to_vec(),
         _ => Vec::new(),
     }
 }
@@ -306,7 +306,7 @@ fn value_to_bytes(value: Value) -> Vec<u8> {
 /// Turn a parsed request into backend args.
 fn command_args(command: &str, payload: Vec<u8>) -> Vec<Value> {
     match command {
-        "ECHO" if !payload.is_empty() => vec![Value::Bytes(payload)],
+        "ECHO" if !payload.is_empty() => vec![Value::bytes(payload)],
         _ => vec![],
     }
 }

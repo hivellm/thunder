@@ -438,7 +438,7 @@ fn value_to_reply(value: &Value) -> Reply {
         Value::Bool(flag) => Reply::Bool(*flag),
         Value::Int(n) => Reply::Int(*n),
         Value::Float(d) => Reply::Double(*d),
-        Value::Bytes(bytes) => Reply::Bulk(bytes.clone()),
+        Value::Bytes(bytes) => Reply::Bulk(bytes.to_vec()),
         Value::Str(text) => Reply::Bulk(text.as_bytes().to_vec()),
         Value::Array(items) => Reply::Array(items.iter().map(value_to_reply).collect()),
         Value::Map(pairs) => Reply::Map(
@@ -456,7 +456,7 @@ fn value_to_reply(value: &Value) -> Reply {
 fn bulk_to_value(bulk: Vec<u8>) -> Value {
     match String::from_utf8(bulk) {
         Ok(text) => Value::Str(text),
-        Err(error) => Value::Bytes(error.into_bytes()),
+        Err(error) => Value::bytes(error.into_bytes()),
     }
 }
 
@@ -482,7 +482,7 @@ fn build_resp3_request(command: &str, args: &[Value]) -> Result<Vec<u8>, String>
 fn arg_bytes(arg: &Value) -> Result<Vec<u8>, String> {
     match arg {
         Value::Str(text) => Ok(text.as_bytes().to_vec()),
-        Value::Bytes(bytes) => Ok(bytes.clone()),
+        Value::Bytes(bytes) => Ok(bytes.to_vec()),
         Value::Null => Ok(Vec::new()),
         Value::Bool(flag) => Ok(if *flag { b"1".to_vec() } else { b"0".to_vec() }),
         Value::Int(n) => Ok(n.to_string().into_bytes()),
@@ -1011,7 +1011,7 @@ mod tests {
         assert_eq!(bulk_to_value(b"hi".to_vec()), Value::Str("hi".to_owned()));
         assert_eq!(
             bulk_to_value(vec![0xff, 0xfe]),
-            Value::Bytes(vec![0xff, 0xfe])
+            Value::bytes(vec![0xff, 0xfe])
         );
     }
 
@@ -1022,7 +1022,7 @@ mod tests {
             Reply::Bulk(b"hi".to_vec())
         );
         assert_eq!(
-            value_to_reply(&Value::Bytes(b"hi".to_vec())),
+            value_to_reply(&Value::bytes(b"hi".to_vec())),
             Reply::Bulk(b"hi".to_vec())
         );
     }
@@ -1107,7 +1107,7 @@ mod tests {
         }
         // SINK drops its args and returns the RESP3 null.
         assert_eq!(
-            call(&mut conn, "SINK", &[Value::Bytes(vec![0u8; 128])]).await,
+            call(&mut conn, "SINK", &[Value::bytes(vec![0u8; 128])]).await,
             Reply::Null
         );
         // Dispatch errors travel in-band and the connection stays usable.

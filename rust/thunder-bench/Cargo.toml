@@ -11,7 +11,7 @@ publish = false
 # One dependency now — the whole stack behind the default client+server features.
 # Key `thunder` + `package = "thunder-rpc"` is the canonical rename form: the
 # registry name collided (see ../thunder/Cargo.toml), the import name did not.
-thunder = { path = "../thunder", version = "0.1.2", package = "thunder-rpc" }
+thunder = { path = "../thunder", version = "0.2.0", package = "thunder-rpc" }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 serde = { workspace = true }
 # The MessagePack-RPC lane encodes with the *same* codec Thunder frames with,

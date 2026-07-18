@@ -46,14 +46,14 @@ pub(crate) enum WriteJob {
 /// (SRV-010): the auth flag is a lock-free atomic flipped by `HELLO`/`AUTH`
 /// and read by the dispatch path without locks.
 #[derive(Debug)]
-pub struct Session {
+pub struct Session<I = ()> {
     connection_id: u64,
     authenticated: AtomicBool,
-    principal: Mutex<Option<Principal>>,
+    principal: Mutex<Option<Principal<I>>>,
     push: Option<PushSender>,
 }
 
-impl Session {
+impl<I> Session<I> {
     /// New session. `pre_authenticated` is true for `Handshake::None`
     /// profiles (no RPC-layer auth, SRV-011); `push` is present only under
     /// `PushPolicy::Enabled` (SRV-013).
@@ -81,12 +81,32 @@ impl Session {
         self.authenticated.load(Ordering::Acquire)
     }
 
-    /// The principal resolved by the last successful `HELLO`/`AUTH`.
-    pub fn principal(&self) -> Option<Principal> {
-        self.principal
+    /// Read the resolved principal **without cloning it** — the
+    /// authorization path (SRV-012).
+    ///
+    /// Authorization runs on every privileged command, so it must not pay a
+    /// `String` clone (or a credential-store lookup) to ask one question:
+    ///
+    /// ```ignore
+    /// let is_admin = session.with_principal(|p| {
+    ///     p.map(|p| p.identity.is_admin).unwrap_or(false)
+    /// });
+    /// ```
+    pub fn with_principal<R>(&self, read: impl FnOnce(Option<&Principal<I>>) -> R) -> R {
+        let guard = self
+            .principal
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+            .unwrap_or_else(PoisonError::into_inner);
+        read(guard.as_ref())
+    }
+
+    /// The principal's name, if one was resolved.
+    ///
+    /// Convenience for the common case; prefer
+    /// [`with_principal`](Self::with_principal) on a hot authorization path,
+    /// since this clones the name.
+    pub fn principal_name(&self) -> Option<String> {
+        self.with_principal(|p| p.map(|p| p.name.clone()))
     }
 
     /// Typed push channel for this connection (SRV-013). `Some` only under
@@ -99,12 +119,24 @@ impl Session {
     /// Store the authenticated principal, then flip the flag — the
     /// `Release`/`Acquire` pair makes the principal visible to any task
     /// that observes `is_authenticated() == true` (SRV-010).
-    pub(crate) fn set_principal(&self, principal: Principal) {
+    pub(crate) fn set_principal(&self, principal: Principal<I>) {
         *self
             .principal
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(principal);
         self.authenticated.store(true, Ordering::Release);
+    }
+}
+
+impl<I: Clone> Session<I> {
+    /// A clone of the principal resolved by the last successful
+    /// `HELLO`/`AUTH`.
+    ///
+    /// Available when the identity is `Clone`; on an authorization hot path
+    /// prefer [`with_principal`](Session::with_principal), which clones
+    /// nothing.
+    pub fn principal(&self) -> Option<Principal<I>> {
+        self.with_principal(|p| p.cloned())
     }
 }
 

@@ -485,7 +485,11 @@ async fn run_connection<D, R, W>(
     // unable to authenticate (BN-023).
     let starts_authenticated =
         matches!(ctx.profile.handshake, Handshake::None) || !ctx.auth_required;
-    let session = Arc::new(Session::new(conn_id, starts_authenticated, push));
+    // Typed with the product's own identity payload (SRV-012): the session
+    // carries whatever `Dispatch::authenticate` resolved, so authorization
+    // reads memory instead of re-querying a credential store.
+    let session: Arc<Session<D::Identity>> =
+        Arc::new(Session::new(conn_id, starts_authenticated, push));
 
     let permits = ctx.profile.max_in_flight.clamp(1, u32::MAX as usize) as u32;
     let in_flight = Arc::new(Semaphore::new(permits as usize));
@@ -845,7 +849,7 @@ async fn write_job<W: tokio::io::AsyncWrite + Unpin>(
 /// `{protocol_version, capabilities}` (`HelloStyle::MapPayload`).
 async fn handle_hello<D: Dispatch>(
     ctx: &ConnShared<D>,
-    session: &Session,
+    session: &Session<D::Identity>,
     req_id: u32,
     args: &[Value],
 ) -> Response {
@@ -914,7 +918,7 @@ async fn handle_hello<D: Dispatch>(
 /// Thunder parses, the product validates, the session flips (SRV-010).
 async fn handle_auth<D: Dispatch>(
     ctx: &ConnShared<D>,
-    session: &Session,
+    session: &Session<D::Identity>,
     req_id: u32,
     args: &[Value],
 ) -> Response {
@@ -943,7 +947,7 @@ fn builtin_ping(req_id: u32, args: &[Value]) -> Response {
     match args {
         [] => Response::ok(req_id, Value::Str("PONG".to_owned())),
         [Value::Str(payload)] => Response::ok(req_id, Value::Str(payload.clone())),
-        [Value::Bytes(payload)] => Response::ok(req_id, Value::Bytes(payload.clone())),
+        [Value::Bytes(payload)] => Response::ok(req_id, Value::Bytes(Arc::clone(payload))),
         [_] => Response::err(
             req_id,
             format_err("PING argument must be a string or bytes"),
@@ -981,7 +985,7 @@ fn parse_hello_credentials(args: &[Value]) -> Result<Credentials, String> {
 fn value_str(value: &Value) -> Option<String> {
     match value {
         Value::Str(text) => Some(text.clone()),
-        Value::Bytes(bytes) => String::from_utf8(bytes.clone()).ok(),
+        Value::Bytes(bytes) => String::from_utf8(bytes.to_vec()).ok(),
         _ => None,
     }
 }

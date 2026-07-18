@@ -32,6 +32,8 @@ impl Counting {
 }
 
 impl Dispatch for Counting {
+    type Identity = ();
+
     async fn dispatch(
         &self,
         session: &Session,
@@ -50,9 +52,7 @@ impl Dispatch for Counting {
     }
 
     async fn authenticate(&self, _creds: Credentials) -> Result<Principal, AuthError> {
-        Ok(Principal {
-            name: "pool-test".to_owned(),
-        })
+        Ok(Principal::new("pool-test".to_owned()))
     }
 }
 

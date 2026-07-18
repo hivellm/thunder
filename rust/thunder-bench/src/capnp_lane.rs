@@ -464,7 +464,7 @@ pub async fn cell(
 ) -> Result<Measured, String> {
     let payload = match spec.args.first() {
         Some(Value::Str(s)) => s.clone(),
-        Some(Value::Bytes(b)) => String::from_utf8(b.clone())
+        Some(Value::Bytes(b)) => String::from_utf8(b.to_vec())
             .map_err(|_| "capnp lane: Text payloads must be UTF-8".to_owned())?,
         Some(other) => return Err(format!("capnp lane: unsupported arg {other:?}")),
         None => String::new(),

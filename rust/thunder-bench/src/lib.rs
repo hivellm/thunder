@@ -50,6 +50,7 @@ pub mod artifact;
 pub mod backend;
 pub mod bolt;
 pub mod driver;
+pub mod grpc;
 pub mod http;
 pub mod memcached;
 pub mod mongodb;

@@ -39,6 +39,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::backend::NoopBackend;
 use crate::bolt::{spawn_bolt_listener, BoltHandle};
+use crate::grpc::{spawn_grpc_listener, GrpcHandle};
 use crate::http::{read_http_response, spawn_http_listener, wire_to_json, HttpHandle};
 use crate::memcached::{spawn_memcached_listener, McHandle};
 use crate::mongodb::{spawn_mongodb_listener, MongoHandle};
@@ -109,6 +110,13 @@ pub enum Lane {
     /// stream (phase4_shootout-expansion). Measured for breadth. Excluded from
     /// [`Lane::ALL`].
     MsgpackRpc,
+    /// **Reference, not a G5 lane**: gRPC over HTTP/2 ([`crate::grpc`], the
+    /// real `tonic` on both sides) — the only peer that is **multiplexed like
+    /// Thunder**, so it is the one that can falsify the d1/c4 hypothesis: is
+    /// the sync-tiny cost the universal price of out-of-order demux, or a
+    /// Thunder defect (phase4_shootout-expansion)? Excluded from
+    /// [`Lane::ALL`].
+    Grpc,
 }
 
 impl Lane {
@@ -124,6 +132,7 @@ impl Lane {
             Self::Mongodb => "mongodb",
             Self::Postgres => "postgres",
             Self::MsgpackRpc => "msgpack-rpc",
+            Self::Grpc => "grpc",
         }
     }
 
@@ -135,7 +144,7 @@ impl Lane {
 
     /// The G5 lanes plus the diagnostic and reference lanes measured under
     /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 9] = [
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 10] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
@@ -145,6 +154,7 @@ impl Lane {
         Lane::Mongodb,
         Lane::Postgres,
         Lane::MsgpackRpc,
+        Lane::Grpc,
     ];
 }
 
@@ -240,6 +250,8 @@ pub struct Targets {
     pub postgres: PgHandle,
     /// The MessagePack-RPC reference listener handle ([`crate::msgpack_rpc`]).
     pub msgpack_rpc: MsgpackHandle,
+    /// The gRPC reference listener handle ([`crate::grpc`]).
+    pub grpc: GrpcHandle,
 }
 
 impl Targets {
@@ -254,6 +266,7 @@ impl Targets {
         self.mongodb.stop().await;
         self.postgres.stop().await;
         self.msgpack_rpc.stop().await;
+        self.grpc.stop().await;
     }
 }
 
@@ -279,6 +292,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let mongodb = spawn_mongodb_listener(Arc::clone(&backend), loopback).await?;
     let postgres = spawn_postgres_listener(Arc::clone(&backend), loopback).await?;
     let msgpack_rpc = spawn_msgpack_rpc_listener(Arc::clone(&backend), loopback).await?;
+    let grpc = spawn_grpc_listener(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -290,6 +304,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         mongodb,
         postgres,
         msgpack_rpc,
+        grpc,
     })
 }
 
@@ -323,6 +338,7 @@ pub async fn run_scenario(
                 Lane::MsgpackRpc => {
                     crate::msgpack_rpc::storm(&targets.msgpack_rpc, storms, cfg).await?
                 }
+                Lane::Grpc => crate::grpc::storm(&targets.grpc, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -351,6 +367,7 @@ pub async fn run_scenario(
                     Lane::MsgpackRpc => {
                         crate::msgpack_rpc::cell(&targets.msgpack_rpc, &spec, cfg).await?
                     }
+                    Lane::Grpc => crate::grpc::cell(&targets.grpc, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

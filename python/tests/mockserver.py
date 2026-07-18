@@ -151,6 +151,14 @@ class MockServer:
     def accept(self) -> ServerConn:
         sock, _ = self._listener.accept()
         self.accepts += 1
+        # A socket returned by accept() is in blocking mode regardless of the
+        # listener's timeout, so it must be given one BEFORE the TLS handshake
+        # below — otherwise a handshake that never completes parks this thread
+        # forever and the client just sits out its own 30 s call timeout. That
+        # is exactly how this surfaced: a CI run where the server was wedged in
+        # wrap_socket and the test failed as a client-side TimeoutError,
+        # pointing at the wrong end.
+        sock.settimeout(IO_TIMEOUT)
         if self._server_ctx is not None:
             # The TLS handshake completes here, before any Thunder frame — no
             # STARTTLS. A mismatched/untrusted client aborts it; the script is

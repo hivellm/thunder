@@ -47,6 +47,9 @@ pub enum Value {
 mod arc_bytes {
     use std::sync::Arc;
 
+    use std::fmt;
+
+    use serde::de::{self, SeqAccess, Visitor};
     use serde::{Deserializer, Serializer};
 
     pub(super) fn serialize<S: Serializer>(
@@ -59,10 +62,58 @@ mod arc_bytes {
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Arc<[u8]>, D::Error> {
-        // One allocation on decode, as before; what is saved is every copy
-        // *after* it — the value can now be shared instead of cloned.
-        let bytes: Vec<u8> = serde_bytes::deserialize(deserializer)?;
-        Ok(Arc::from(bytes))
+        // Builds the shared buffer DIRECTLY from the decoder's bytes.
+        //
+        // The obvious spelling — `Arc::from(serde_bytes::deserialize::<Vec<u8>>(d)?)`
+        // — costs a second allocation and a second full copy, because
+        // `Arc<[u8]>` stores its refcount inline with the data and so cannot
+        // adopt a `Vec`'s buffer. That would have moved a memcpy off the read
+        // path and onto the decode path, which is not a fix. This visitor
+        // allocates once, as the `Vec` path did.
+        deserializer.deserialize_bytes(ArcBytesVisitor)
+    }
+
+    struct ArcBytesVisitor;
+
+    impl<'de> Visitor<'de> for ArcBytesVisitor {
+        type Value = Arc<[u8]>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("bytes (MessagePack bin, or the legacy int array)")
+        }
+
+        /// The canonical path: MessagePack `bin` (WIRE-010). One allocation,
+        /// one copy, straight into the shared buffer.
+        fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+            Ok(Arc::from(v))
+        }
+
+        fn visit_borrowed_bytes<E: de::Error>(self, v: &'de [u8]) -> Result<Self::Value, E> {
+            Ok(Arc::from(v))
+        }
+
+        /// Some decoders hand over an owned buffer; adopting it still costs
+        /// the copy `Arc<[u8]>` inherently requires, but no more than that.
+        fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+            Ok(Arc::from(v))
+        }
+
+        /// WIRE-011: the legacy int-array form, decoded forever, never
+        /// emitted. Rare by construction, so the intermediate `Vec` here is
+        /// not on any hot path.
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut bytes = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(byte) = seq.next_element::<u8>()? {
+                bytes.push(byte);
+            }
+            Ok(Arc::from(bytes))
+        }
+
+        /// A `str` arriving where bytes are expected — tolerated as its UTF-8
+        /// bytes, matching `serde_bytes`.
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            Ok(Arc::from(v.as_bytes()))
+        }
     }
 }
 

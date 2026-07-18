@@ -157,7 +157,7 @@ impl ListenerConfig {
 
 impl std::fmt::Debug for ListenerConfig {
     /// Hand-written because `observer` is a trait object: it reports whether
-    /// one is installed rather than requiring `Debug` from every implementor.
+    /// one is installed rather than requiring `Debug` from every implementer.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ListenerConfig")
             .field("addr", &self.addr)

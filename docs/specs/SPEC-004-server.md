@@ -102,8 +102,9 @@ enforcement) is Thunder's.
 - **SRV-030** [P0] Metrics as plain atomics, snapshot-friendly for any exporter:
   `connections` (gauge), `commands_total`, `commands_error_total`,
   `command_duration_microseconds_total`, `frame_bytes_in_total`, `frame_bytes_out_total`,
-  `slow_commands_total` (threshold configurable). Metrics record **after** a successful socket
-  write, per the Nexus writer contract.
+  `slow_commands_total` (threshold configurable), and `non_hello_first_frames_total` (the
+  lead-with-`HELLO` adoption signal, SPEC-008 handshake section). Metrics record **after** a
+  successful socket write, per the Nexus writer contract.
 - **SRV-031** [P0] Tracing spans `rpc.conn` / `rpc.req` with a WARN on slow commands
   (configurable threshold), matching the family's operating posture.
 

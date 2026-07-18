@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// The seven atomic series of SRV-030. Interior to the listener; consumers
+/// The eight atomic series of SRV-030. Interior to the listener; consumers
 /// read it through [`MetricsSnapshot`].
 #[derive(Debug, Default)]
 pub(crate) struct Metrics {
@@ -18,6 +18,7 @@ pub(crate) struct Metrics {
     frame_bytes_in_total: AtomicU64,
     frame_bytes_out_total: AtomicU64,
     slow_commands_total: AtomicU64,
+    non_hello_first_frames_total: AtomicU64,
 }
 
 impl Metrics {
@@ -64,6 +65,16 @@ impl Metrics {
             .fetch_add(out_bytes as u64, Ordering::Relaxed);
     }
 
+    /// Record one connection whose first frame was **not** a canonical
+    /// `HELLO` (SPEC-008 handshake section): the adoption signal a product
+    /// watches while migrating its clients to lead with `HELLO`, before it
+    /// cuts a legacy first-frame path. Cumulative; zero under a profile whose
+    /// clients always lead with `HELLO` (`HelloMandatory`).
+    pub(crate) fn record_non_hello_first_frame(&self) {
+        self.non_hello_first_frames_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Point-in-time copy of every series.
     pub(crate) fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
@@ -76,6 +87,7 @@ impl Metrics {
             frame_bytes_in_total: self.frame_bytes_in_total.load(Ordering::Relaxed),
             frame_bytes_out_total: self.frame_bytes_out_total.load(Ordering::Relaxed),
             slow_commands_total: self.slow_commands_total.load(Ordering::Relaxed),
+            non_hello_first_frames_total: self.non_hello_first_frames_total.load(Ordering::Relaxed),
         }
     }
 }
@@ -98,4 +110,7 @@ pub struct MetricsSnapshot {
     pub frame_bytes_out_total: u64,
     /// Commands slower than the configured threshold (SRV-030).
     pub slow_commands_total: u64,
+    /// Connections whose first frame was not a canonical `HELLO` — the
+    /// lead-with-`HELLO` adoption signal (SPEC-008 handshake section).
+    pub non_hello_first_frames_total: u64,
 }

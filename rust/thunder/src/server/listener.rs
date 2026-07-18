@@ -378,6 +378,11 @@ async fn run_connection<D, R, W>(
         // frame with the profile's error convention and closes.
         if first_frame {
             first_frame = false;
+            // SPEC-008 handshake adoption signal: did this connection lead
+            // with a canonical HELLO, or a legacy first frame?
+            if req.command != "HELLO" {
+                ctx.metrics.record_non_hello_first_frame();
+            }
             if matches!(ctx.profile.handshake, Handshake::HelloMandatory) && req.command != "HELLO"
             {
                 let response = Response::err(req.id, hello_required_error(&ctx.profile));

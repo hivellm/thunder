@@ -385,6 +385,37 @@ async fn hello_mandatory_handshake_grants_access_and_reports_capabilities() {
 }
 
 #[tokio::test]
+async fn non_hello_first_frames_are_counted_for_handshake_adoption() {
+    // Leading with HELLO does not bump the adoption counter (SPEC-008).
+    let (handle, _d) = start(hello_mandatory_config()).await;
+    let mut client = connect(&handle).await;
+    let hello = Value::Map(vec![
+        (Value::Str("version".into()), Value::Int(1)),
+        (Value::Str("token".into()), Value::Str("tok-1".into())),
+    ]);
+    let _ = call(&mut client, 1, "HELLO", vec![hello]).await;
+    assert_eq!(handle.snapshot().non_hello_first_frames_total, 0);
+    drop(client);
+    handle.stop().await;
+
+    // Under an optional-HELLO profile a client may go straight to a call;
+    // each such connection is a non-HELLO first frame, counted cumulatively.
+    let (handle, _d) = start(argless_hello_config()).await;
+    let mut c1 = connect(&handle).await;
+    let _ = call(&mut c1, 1, "PING", vec![]).await;
+    let mut c2 = connect(&handle).await;
+    let _ = call(&mut c2, 1, "PING", vec![]).await;
+    assert_eq!(
+        handle.snapshot().non_hello_first_frames_total,
+        2,
+        "two connections led with a non-HELLO frame"
+    );
+    drop(c1);
+    drop(c2);
+    handle.stop().await;
+}
+
+#[tokio::test]
 async fn hello_mandatory_bad_credentials_error_allows_retry() {
     let (handle, _dispatch) = start(hello_mandatory_config()).await;
     let mut client = connect(&handle).await;

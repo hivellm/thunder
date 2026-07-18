@@ -133,7 +133,7 @@ await using var client = await ThunderClient.ConnectAsync("myapp://localhost", a
 var pong = await client.CallAsync("PING");
 ```
 
-Per-language detail: [rust](rust/) · [typescript/README.md](typescript/README.md) · [python/README.md](python/README.md) · [csharp/README.md](csharp/README.md) · [go/README.md](go/README.md).
+Per-language detail: [rust/README.md](rust/README.md) · [typescript/README.md](typescript/README.md) · [python/README.md](python/README.md) · [csharp/README.md](csharp/README.md) · [go/README.md](go/README.md).
 
 ## 🗂 Configuration — one standard, zero product knowledge
 

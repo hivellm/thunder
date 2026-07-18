@@ -85,13 +85,16 @@ them and pins the one dimension still open: the canonical error-grammar spelling
   `WRONGPASS`, `NOPERM`, `NOPROTO` — as `"<TOKEN> <message>"`. This is the pinned decision on the one
   spelling the analysis left open (BN-011); rationale and the rejected alternative are recorded in
   [`.rulebook/decisions/2026-07-17-canonical-error-grammar.md`](../../.rulebook/decisions/2026-07-17-canonical-error-grammar.md).
-- **CAN-031** [P0] The recognized auth-family token set SHALL be the closed set
-  `{NOAUTH, WRONGPASS, NOPERM, NOPROTO}`. Every client on the `both` grammar MUST map a leading
-  token from this set to the **auth class**, and MUST extract a leading `"[code] "` into a structured
-  `code`, regardless of which form a given server emits (SPEC-003 CLT-050/CLT-051). `NOPERM` — an
-  authorization refusal, classed with authentication because the client's recourse is the same — was
-  unmodeled until the BN-023 errata and is corpus-pinned by `response-err-noperm`; `NOPROTO` is
-  carried for the convention though no RPC path emits it yet.
+- **CAN-031** [P0] The **auth-class** token set SHALL be the closed set `{NOAUTH, WRONGPASS, NOPERM}`.
+  Every client on the `both` grammar MUST map a leading token from this set to the **auth class**, and
+  MUST extract a leading `"[code] "` into a structured `code`, regardless of which form a given server
+  emits (SPEC-003 CLT-050/CLT-051). All four language clients recognize exactly this set. `NOPERM` —
+  an authorization refusal, classed with authentication because the client's recourse is the same
+  (present different credentials) — was unmodeled until the BN-023 errata and is corpus-pinned by
+  `response-err-noperm`. `NOPROTO` (protocol-version negotiation failure) is a reserved token of the
+  convention that no RPC path emits today; it is **not** auth-class (its recourse is a version
+  change, not credentials), so no client special-cases it — an emitted `NOPROTO` would classify as a
+  generic server error until a path that emits it, and a rule for it, exist.
 - **CAN-032** [P0] The two prior per-product grammars — RESP3-only (bare tokens) and bracket-only —
   are **subsets** of `both`. A client on `both` therefore reads every family server with no
   negotiation, and **no product must change its emission**: the bare auth tokens it emits today

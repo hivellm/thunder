@@ -346,6 +346,15 @@ async def test_handshake_rejection_is_a_typed_auth_error() -> None:
 #: one.
 BLACKHOLE_ADDR = "192.0.2.1:9"
 
+#: Slack for the wall-clock assertion below — the async twin of the one in
+#: `test_client_sync.py`. Windows' default timer granularity is ~15.6 ms, so a
+#: 150 ms dial can legitimately measure as ~141 ms there, which is exactly how
+#: CI failed on windows-latest. The assertion only has to prove the dial
+#: *waited out* its timeout rather than failing instantly (an instant failure
+#: is the ConnectionError class, which is what this test rules out), and one
+#: timer tick of slack keeps that meaning while surviving a coarse clock.
+CONNECT_TIMEOUT_SLACK = 0.02
+
 
 async def test_connect_timeout_fires_as_typed_timeout() -> None:
     loop = asyncio.get_running_loop()
@@ -358,9 +367,11 @@ async def test_connect_timeout_fires_as_typed_timeout() -> None:
             plain_config(),
             ClientConfig(connect_timeout=0.15),
         )
-    assert (
-        loop.time() - started >= 0.15
-    ), "the dial must be given the full connect timeout before failing"
+    elapsed = loop.time() - started
+    assert elapsed >= 0.15 - CONNECT_TIMEOUT_SLACK, (
+        "the dial must be given the full connect timeout before failing, "
+        f"but returned after {elapsed:.3f}s"
+    )
 
 
 async def test_per_call_timeout_fires_and_late_response_is_dropped() -> None:

@@ -1,0 +1,18 @@
+name: proposal-push-envelope-invalidate
+group: push-streaming
+mode: bidirectional
+frame_hex: "69 00 00 00 92 ce ff ff ff ff 81 a2 4f 6b 81 a3 4d 61 70 93 92 81 a3 53 74 72 a6 73 74 72 65 61 6d 81 a3 49 6e 74 00 92 81 a3 53 74 72 a4 6b 69 6e 64 81 a3 53 74 72 aa 69 6e 76 61 6c 69 64 61 74 65 92 81 a3 53 74 72 a4 64 61 74 61 81 a5 41 72 72 61 79 92 81 a3 53 74 72 a6 75 73 65 72 3a 31 81 a3 53 74 72 a6 75 73 65 72 3a 32"
+decoded:
+  kind: response
+  id: 4294967295
+  ok:
+    type: map
+    value:
+      - [{ type: str, value: stream }, { type: int, value: 0 }]
+      - [{ type: str, value: kind }, { type: str, value: invalidate }]
+      - - { type: str, value: data }
+        - type: array
+          value:
+            - { type: str, value: "user:1" }
+            - { type: str, value: "user:2" }
+notes: "PROPOSAL-STAGE (PUSH-012/WIRE-052 broadcast). Cache invalidation on stream=0, the reserved broadcast lane (0 is never a client request id under CLT-010, so it means 'not tied to one request'). data lists the invalidated keys. Every push=Streaming consumer receives it with no prior correlated request. NOT normative - see docs/analysis/push-streaming/."

@@ -1,0 +1,19 @@
+name: proposal-push-envelope-progress
+group: push-streaming
+mode: bidirectional
+frame_hex: "8a 00 00 00 92 ce ff ff ff ff 81 a2 4f 6b 81 a3 4d 61 70 93 92 81 a3 53 74 72 a6 73 74 72 65 61 6d 81 a3 49 6e 74 2a 92 81 a3 53 74 72 a4 6b 69 6e 64 81 a3 53 74 72 a8 70 72 6f 67 72 65 73 73 92 81 a3 53 74 72 a4 64 61 74 61 81 a3 4d 61 70 93 92 81 a3 53 74 72 a4 64 6f 6e 65 81 a3 49 6e 74 03 92 81 a3 53 74 72 a5 74 6f 74 61 6c 81 a3 49 6e 74 0a 92 81 a3 53 74 72 a5 73 74 61 67 65 81 a3 53 74 72 a8 69 6e 64 65 78 69 6e 67"
+decoded:
+  kind: response
+  id: 4294967295
+  ok:
+    type: map
+    value:
+      - [{ type: str, value: stream }, { type: int, value: 42 }]
+      - [{ type: str, value: kind }, { type: str, value: progress }]
+      - - { type: str, value: data }
+        - type: map
+          value:
+            - [{ type: str, value: done }, { type: int, value: 3 }]
+            - [{ type: str, value: total }, { type: int, value: 10 }]
+            - [{ type: str, value: stage }, { type: str, value: indexing }]
+notes: "PROPOSAL-STAGE (PUSH-011/WIRE-053 kind=progress). A non-terminal progress tick for a long job on stream 42; data carries a product-shaped {done,total,stage} that Thunder never parses (WIRE-055). Shows a nested Map payload round-tripping through the frozen wire. NOT normative - see docs/analysis/push-streaming/."

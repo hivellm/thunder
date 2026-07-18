@@ -68,3 +68,10 @@ Build it, in this repository, in four phases (§4): **P0** name/scope decisions 
   source sweep also exposed three profile-registry errata (BN-023) that correct assumptions made
   here (notably: Synap's RPC path *does* authenticate behind `require_auth`, contra §1's
   "auth is HTTP-only" reading).
+- [push-streaming/](push-streaming/README.md) — **proposal-stage** design (T5.2, P2 fast-follow):
+  family push/streaming semantics beyond Synap's `SUBSCRIBE` (watch, progress, invalidation),
+  wire-compatible via the reserved `PUSH_ID` so the wire version stays `1`. Proposes a canonical
+  push envelope `{stream, kind, data}` inside the existing `Ok(Value)` payload and a
+  backward-compatible `push = Streaming` profile setting (PUSH-001..PUSH-062). Proposal-stage corpus
+  vectors live under [`conformance/vectors/proposal-push-streaming/`](../../conformance/vectors/proposal-push-streaming/README.md)
+  and are verified to round-trip the frozen wire; ratification is gated on Synap coordination.

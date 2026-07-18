@@ -1,0 +1,14 @@
+name: proposal-push-envelope-end
+group: push-streaming
+mode: bidirectional
+frame_hex: "47 00 00 00 92 ce ff ff ff ff 81 a2 4f 6b 81 a3 4d 61 70 93 92 81 a3 53 74 72 a6 73 74 72 65 61 6d 81 a3 49 6e 74 2a 92 81 a3 53 74 72 a4 6b 69 6e 64 81 a3 53 74 72 a3 65 6e 64 92 81 a3 53 74 72 a4 64 61 74 61 a4 4e 75 6c 6c"
+decoded:
+  kind: response
+  id: 4294967295
+  ok:
+    type: map
+    value:
+      - [{ type: str, value: stream }, { type: int, value: 42 }]
+      - [{ type: str, value: kind }, { type: str, value: end }]
+      - [{ type: str, value: data }, { type: "null" }]
+notes: "PROPOSAL-STAGE (PUSH-013/WIRE-054 kind=end, terminal). Stream 42 is closed: no further frames for it will arrive and the client MAY free per-stream state. data is Null here (an end MAY instead carry a final result). Note the bare-string Null variant ('Null') pinning the unit-variant encoding inside the envelope. NOT normative - see docs/analysis/push-streaming/."

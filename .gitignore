@@ -40,3 +40,7 @@ csharp/**/bin/
 csharp/**/obj/
 .pypirc
 nuget.config
+# Coverage artifacts (pytest --cov, tarpaulin, nyc)
+.coverage
+coverage.xml
+htmlcov/

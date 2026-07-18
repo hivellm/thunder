@@ -31,7 +31,9 @@
  * (`thunder::client`): a reader task plus a pending-call map.
  */
 
+import * as fs from "node:fs";
 import * as net from "node:net";
+import * as tls from "node:tls";
 
 import { parseEndpoint } from "./endpoint";
 import type { Endpoint } from "./endpoint";
@@ -74,6 +76,24 @@ export type Credentials =
   | { type: "userPass"; user: string; pass: string };
 
 /**
+ * Client-side TLS material (FR-29 / SPEC-008 CAN-020). Presence on
+ * {@link ClientOptions.tls} makes the client dial TLS; absence keeps it
+ * plaintext (the default). Mirrors the Rust `ClientTls`.
+ *
+ * There is **no STARTTLS**: TLS is decided at connect time and the handshake
+ * completes before any Thunder frame, so the wire codec never sees the
+ * difference between a plaintext and an encrypted byte stream.
+ */
+export interface ClientTls {
+  /** Name to verify the server certificate against (SNI). When omitted,
+   * the endpoint host is used. */
+  serverName?: string;
+  /** Path to a PEM file of trusted root(s) to **pin**. When omitted, the
+   * platform's native root store is used. */
+  caPath?: string;
+}
+
+/**
  * Client configuration: connect timeout default **10 s** (CLT-001),
  * per-call timeout default **30 s** (CLT-020), optional credentials and
  * client name for the handshake (CLT-002).
@@ -88,6 +108,11 @@ export interface ClientOptions {
   credentials?: Credentials;
   /** Client identifier sent in the `HELLO` map (`hello_mandatory`). */
   clientName?: string;
+  /** Optional TLS (FR-29 / SPEC-008 CAN-020). Set to dial TLS; omitted
+   * (the default) keeps plaintext. A TLS/verification failure classifies
+   * as a {@link ConnectionError}, the same class as a plaintext connect
+   * failure. */
+  tls?: ClientTls;
 }
 
 /** Per-call options. */
@@ -283,6 +308,7 @@ export class Client {
   readonly #callTimeoutMs: number;
   readonly #credentials: Credentials | undefined;
   readonly #clientName: string | undefined;
+  readonly #tls: ClientTls | undefined;
 
   /** Monotonic id allocator, skipping PUSH_ID (CLT-010). */
   #nextId = 1;
@@ -306,6 +332,7 @@ export class Client {
     this.#callTimeoutMs = options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
     this.#credentials = options.credentials;
     this.#clientName = options.clientName;
+    this.#tls = options.tls;
     this.#inFlight = new Semaphore(config.maxInFlight);
   }
 
@@ -386,6 +413,15 @@ export class Client {
    * (CLT-003 — auth is sticky per connection). */
   get isAuthenticated(): boolean {
     return this.#handshakeInfo.authenticated;
+  }
+
+  /** `true` while the current connection is live — not poisoned (CLT-014)
+   * and not closed (CLT-004). The pool (CLT-080) uses this to drop a dead
+   * connection instead of handing it back; ordinary callers rely on typed
+   * call errors and lazy reconnect (CLT-030) rather than polling this.
+   * Mirrors the Rust `Client::is_alive`. */
+  get isAlive(): boolean {
+    return this.#conn?.alive ?? false;
   }
 
   /** Capabilities the server advertised in the `HELLO` reply. */
@@ -497,31 +533,80 @@ export class Client {
     }
   }
 
+  /**
+   * Dial the transport (CLT-001). Plaintext is the default; when TLS is
+   * configured (FR-29) the TCP connect is followed by a TLS handshake that
+   * completes before this resolves — no STARTTLS. A TLS/verification failure
+   * resolves as a {@link ConnectionError}, the same class as a plaintext
+   * connect failure. The connect timeout covers the whole dial (TCP +, when
+   * present, TLS).
+   */
   #dial(): Promise<net.Socket> {
     const { host, port } = this.#endpoint;
+    const tlsConfig = this.#tls;
     return new Promise((resolve, reject) => {
-      const socket = net.connect({ host, port, noDelay: true });
+      const tcp = net.connect({ host, port, noDelay: true });
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        socket.destroy();
+        tcp.destroy();
         reject(new TimeoutError(`connect to ${host}:${port} timed out`));
       }, this.#connectTimeoutMs);
       timer.unref?.();
-      socket.once("connect", () => {
+      const fail = (error: Error): void => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        socket.setNoDelay(true);
+        tcp.destroy();
+        reject(error);
+      };
+      const succeed = (socket: net.Socket): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         resolve(socket);
+      };
+      tcp.once("error", (error) => {
+        fail(new ConnectionError(`connect to ${host}:${port} failed: ${error.message}`));
       });
-      socket.once("error", (error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        socket.destroy();
-        reject(new ConnectionError(`connect to ${host}:${port} failed: ${error.message}`));
+      tcp.once("connect", () => {
+        tcp.setNoDelay(true);
+        if (!tlsConfig) {
+          succeed(tcp);
+          return;
+        }
+        // FR-29: complete the TLS handshake before any Thunder frame.
+        let ca: Buffer | undefined;
+        try {
+          ca =
+            tlsConfig.caPath === undefined ? undefined : fs.readFileSync(tlsConfig.caPath);
+        } catch (e) {
+          fail(new ConnectionError(`TLS setup failed: ${toError(e).message}`));
+          return;
+        }
+        // A pinned `ca` REPLACES the default roots (only that CA is trusted);
+        // omitted, Node verifies against the platform's native store. Either
+        // way `rejectUnauthorized` stays on (its default), so an untrusted
+        // cert emits `error` rather than connecting.
+        const secure = tls.connect({
+          socket: tcp,
+          servername: tlsConfig.serverName ?? host,
+          ca,
+        });
+        secure.once("secureConnect", () => {
+          if (secure.authorized) {
+            succeed(secure);
+          } else {
+            // With `rejectUnauthorized` on, a verification failure normally
+            // arrives as an `error` event (handled below); this branch is the
+            // defensive backstop.
+            fail(new ConnectionError("TLS handshake failed: server certificate not authorized"));
+          }
+        });
+        secure.once("error", (error: Error) => {
+          fail(new ConnectionError(`TLS handshake failed: ${error.message}`));
+        });
       });
     });
   }

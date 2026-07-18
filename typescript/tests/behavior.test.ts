@@ -6,8 +6,6 @@
  * suite (`rust/thunder/tests/behavior.rs`).
  */
 
-import * as net from "node:net";
-
 import { afterEach, expect, test } from "vitest";
 
 import {
@@ -15,18 +13,16 @@ import {
   Client,
   ConnectionError,
   DecodeError,
-  FrameReader,
   FrameTooLargeError,
   PUSH_ID,
-  Response,
   ServerError,
   ThunderError,
   TimeoutError,
   Value,
-  decodeRequestBody,
-  encodeResponse,
 } from "../src/index";
 import type { ClientOptions, Config, Request } from "../src/index";
+
+import { MockServer } from "./mock-server";
 
 /**
  * A custom config (PRO-020): no handshake, push reserved, no error
@@ -84,114 +80,6 @@ function helloMandatoryConfig(overrides: Partial<Config> = {}): Config {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** One accepted server-side connection with a request queue. */
-class ServerConn {
-  readonly socket: net.Socket;
-  readonly #reader = new FrameReader();
-  readonly #requests: Request[] = [];
-  readonly #waiters: ((request: Request) => void)[] = [];
-
-  constructor(socket: net.Socket) {
-    this.socket = socket;
-    socket.on("data", (chunk) => {
-      this.#reader.push(chunk);
-      for (;;) {
-        const body = this.#reader.nextBody();
-        if (body === null) break;
-        const request = decodeRequestBody(body);
-        const waiter = this.#waiters.shift();
-        if (waiter) waiter(request);
-        else this.#requests.push(request);
-      }
-    });
-    socket.on("error", () => {
-      // Client teardown surfaces as ECONNRESET here; irrelevant.
-    });
-  }
-
-  nextRequest(): Promise<Request> {
-    const queued = this.#requests.shift();
-    if (queued) return Promise.resolve(queued);
-    return new Promise((resolve) => this.#waiters.push(resolve));
-  }
-
-  /** Requests received but not yet pulled — the backpressure probe. */
-  get queuedRequests(): number {
-    return this.#requests.length;
-  }
-
-  sendOk(id: number, value: Value): void {
-    this.socket.write(encodeResponse(Response.ok(id, value)));
-  }
-
-  sendErr(id: number, message: string): void {
-    this.socket.write(encodeResponse(Response.err(id, message)));
-  }
-
-  sendRaw(bytes: Uint8Array): void {
-    this.socket.write(bytes);
-  }
-
-  destroy(): void {
-    this.socket.destroy();
-  }
-}
-
-/** In-process loopback mock server. */
-class MockServer {
-  accepts = 0;
-  readonly #server: net.Server;
-  readonly #port: number;
-  readonly #conns: ServerConn[] = [];
-  readonly #queue: ServerConn[] = [];
-  readonly #waiters: ((conn: ServerConn) => void)[] = [];
-
-  private constructor(server: net.Server, port: number) {
-    this.#server = server;
-    this.#port = port;
-    server.on("connection", (socket) => {
-      this.accepts += 1;
-      const conn = new ServerConn(socket);
-      this.#conns.push(conn);
-      const waiter = this.#waiters.shift();
-      if (waiter) waiter(conn);
-      else this.#queue.push(conn);
-    });
-  }
-
-  static listen(): Promise<MockServer> {
-    return new Promise((resolve, reject) => {
-      const server = net.createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        if (address === null || typeof address === "string") {
-          reject(new Error("no bound address"));
-          return;
-        }
-        resolve(new MockServer(server, address.port));
-      });
-    });
-  }
-
-  get addr(): string {
-    return `127.0.0.1:${this.#port}`;
-  }
-
-  nextConn(): Promise<ServerConn> {
-    const queued = this.#queue.shift();
-    if (queued) return Promise.resolve(queued);
-    return new Promise((resolve) => this.#waiters.push(resolve));
-  }
-
-  close(): Promise<void> {
-    for (const conn of this.#conns) conn.destroy();
-    return new Promise((resolve) => {
-      this.#server.close(() => resolve());
-    });
-  }
 }
 
 const cleanups: (() => Promise<void> | void)[] = [];

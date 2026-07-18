@@ -70,6 +70,9 @@ export { Client } from "./client";
 export type {
   CallOptions,
   ClientOptions,
+  ClientTls,
   Credentials,
   HandshakeInfo,
 } from "./client";
+
+export { Pool, PooledConn } from "./pool";

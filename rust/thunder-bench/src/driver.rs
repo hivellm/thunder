@@ -49,6 +49,7 @@ use crate::resp3::{spawn_resp3_listener, Resp3Handle};
 use crate::scenarios::{Scenario, Workload};
 use crate::stats::{compute, dispersion, CellStats, Dispersion};
 use crate::stripped::{spawn_stripped_listener, StrippedHandle};
+use crate::thrift_lane::{spawn_thrift_listener, ThriftHandle};
 
 /// The config this application (the bench harness) defines for itself —
 /// the worked example of Thunder's model: start from the standard, override
@@ -117,6 +118,13 @@ pub enum Lane {
     /// Thunder defect (phase4_shootout-expansion)? Excluded from
     /// [`Lane::ALL`].
     Grpc,
+    /// **Reference, not a G5 lane**: Apache Thrift ([`crate::thrift_lane`]) —
+    /// the real `TCompactProtocol`, the most size-optimized encoding in the
+    /// shootout, over a framed transport whose 4-byte length prefix is
+    /// Thunder's own shape. Shares Thunder's framing and differs on encoding —
+    /// the mirror of the MessagePack-RPC lane (phase4_shootout-expansion).
+    /// Excluded from [`Lane::ALL`].
+    Thrift,
 }
 
 impl Lane {
@@ -133,6 +141,7 @@ impl Lane {
             Self::Postgres => "postgres",
             Self::MsgpackRpc => "msgpack-rpc",
             Self::Grpc => "grpc",
+            Self::Thrift => "thrift",
         }
     }
 
@@ -144,7 +153,7 @@ impl Lane {
 
     /// The G5 lanes plus the diagnostic and reference lanes measured under
     /// `--diagnostic` for breadth (`ThunderStripped`, `Memcached`).
-    pub const ALL_WITH_DIAGNOSTIC: [Lane; 10] = [
+    pub const ALL_WITH_DIAGNOSTIC: [Lane; 11] = [
         Lane::Thunder,
         Lane::Resp3,
         Lane::Bolt,
@@ -155,6 +164,7 @@ impl Lane {
         Lane::Postgres,
         Lane::MsgpackRpc,
         Lane::Grpc,
+        Lane::Thrift,
     ];
 }
 
@@ -252,6 +262,8 @@ pub struct Targets {
     pub msgpack_rpc: MsgpackHandle,
     /// The gRPC reference listener handle ([`crate::grpc`]).
     pub grpc: GrpcHandle,
+    /// The Thrift reference listener handle ([`crate::thrift_lane`]).
+    pub thrift: ThriftHandle,
 }
 
 impl Targets {
@@ -267,6 +279,7 @@ impl Targets {
         self.postgres.stop().await;
         self.msgpack_rpc.stop().await;
         self.grpc.stop().await;
+        self.thrift.stop().await;
     }
 }
 
@@ -293,6 +306,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
     let postgres = spawn_postgres_listener(Arc::clone(&backend), loopback).await?;
     let msgpack_rpc = spawn_msgpack_rpc_listener(Arc::clone(&backend), loopback).await?;
     let grpc = spawn_grpc_listener(Arc::clone(&backend), loopback).await?;
+    let thrift = spawn_thrift_listener(Arc::clone(&backend), loopback).await?;
     let stripped = spawn_stripped_listener(backend, loopback).await?;
     Ok(Targets {
         thunder,
@@ -305,6 +319,7 @@ pub async fn spawn_targets() -> io::Result<Targets> {
         postgres,
         msgpack_rpc,
         grpc,
+        thrift,
     })
 }
 
@@ -339,6 +354,7 @@ pub async fn run_scenario(
                     crate::msgpack_rpc::storm(&targets.msgpack_rpc, storms, cfg).await?
                 }
                 Lane::Grpc => crate::grpc::storm(&targets.grpc, storms, cfg).await?,
+                Lane::Thrift => crate::thrift_lane::storm(&targets.thrift, storms, cfg).await?,
             };
             Ok(vec![finish_cell(scenario, lane, 1, storms, measured)])
         }
@@ -368,6 +384,7 @@ pub async fn run_scenario(
                         crate::msgpack_rpc::cell(&targets.msgpack_rpc, &spec, cfg).await?
                     }
                     Lane::Grpc => crate::grpc::cell(&targets.grpc, &spec, cfg).await?,
+                    Lane::Thrift => crate::thrift_lane::cell(&targets.thrift, &spec, cfg).await?,
                 };
                 cells.push(finish_cell(scenario, lane, depth, connections, measured));
             }

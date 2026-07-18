@@ -62,6 +62,7 @@ pub mod resp3;
 pub mod scenarios;
 pub mod stats;
 pub mod stripped;
+pub mod thrift_lane;
 
 pub use driver::bench_profile;
 pub use thunder::wire;

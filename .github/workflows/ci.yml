@@ -105,3 +105,30 @@ jobs:
         run: dotnet test --no-build
       - name: Conformance corpus (TST-020/021)
         run: dotnet test --no-build --filter "FullyQualifiedName~CorpusTests"
+
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: go/go.sum
+      # `go vet` is the type-check step; `gofmt -l` is the lint step (it must
+      # print nothing, so any unformatted file fails the lane before tests run).
+      - name: Type-check
+        run: go vet ./...
+      - name: Lint
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt found unformatted files:"; echo "$unformatted"; exit 1
+          fi
+      - name: Test
+        run: go test ./...
+      - name: Conformance corpus (TST-020/021)
+        run: go test ./conformance/ -run TestCorpusVectors -v

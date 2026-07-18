@@ -42,6 +42,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: go/go.sum
       - name: Rust
         working-directory: rust
         run: |
@@ -66,6 +70,15 @@ jobs:
         run: |
           dotnet build -c Release -warnaserror
           dotnet test -c Release --no-build
+      # Go is the fifth lane (PKG-050). It publishes from a VCS module tag, so it
+      # has no publish job below — but the shared gate still runs fmt/vet/test on
+      # the tagged commit, exactly as go/README.md promises.
+      - name: Go
+        working-directory: go
+        run: |
+          test -z "$(gofmt -l .)" || { echo 'gofmt found unformatted files'; gofmt -l .; exit 1; }
+          go vet ./...
+          go test ./...
       # The tag is the version. A tag that disagrees with the manifests would
       # publish something other than what it claims — and the wrong version
       # cannot be recalled from any of these registries.

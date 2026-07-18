@@ -18,6 +18,14 @@
 | §6 | [06-benchmark-mandate.md](06-benchmark-mandate.md) | Transport shootout Thunder vs Bolt vs RESP3 vs HTTP; the always-win release gate G5 (T-025..T-026) |
 | §7 | [07-performance-baseline.md](07-performance-baseline.md) | Which of the three implementations is fastest — hot-path comparison, rmp-serde probe, the composite baseline (T-027..T-030) |
 
+Deeper studies live in their own directories:
+
+| Study | Contents |
+|---|---|
+| [protocol-shootout/](protocol-shootout/) | The shootout grown from 4 lanes to **14** — real protocol crates where they exist; the multiplexing question answered against gRPC; framing, codec and topology isolated one at a time; AMQP and Kafka evaluated and refused with reasoning |
+| [behavioral-normalization/](behavioral-normalization/) | Divergence inventory across the family and the path to one behavior |
+| [push-streaming/](push-streaming/) | Server-initiated frames over the reserved `PUSH_ID`, proposal stage |
+
 Findings are numbered **T-001..T-030** globally.
 
 ## Executive summary

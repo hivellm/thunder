@@ -2,10 +2,10 @@
 
 **⚡ The HiveLLM binary RPC protocol as a single shared module — one wire, one codec, one client contract, every language**
 
-![Status](https://img.shields.io/badge/status-0.1.0%20published-success.svg)
+![Status](https://img.shields.io/badge/version-0.1.1-success.svg)
 ![Wire](https://img.shields.io/badge/wire%20protocol-v1%20(frozen)-success.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
-![Languages](https://img.shields.io/badge/targets-Rust%20%7C%20TypeScript%20%7C%20Python%20%7C%20C%23-orange.svg)
+![Languages](https://img.shields.io/badge/targets-Rust%20%7C%20TypeScript%20%7C%20Python%20%7C%20C%23%20%7C%20Go-orange.svg)
 
 [What is Thunder?](#-what-is-thunder) • [The Protocol](#-the-protocol) • [Architecture](#-architecture) • [Packages](#-packages) • [Configuration](#-configuration--one-standard-zero-product-knowledge) • [Conformance](#-conformance) • [Benchmarks](#-benchmarks) • [Roadmap](#-roadmap) • [Documentation](#-documentation)
 
@@ -53,9 +53,9 @@ Canonical spec: `docs/spec/` (transplanted from `Nexus/docs/specs/rpc-wire-forma
 
 Thunder is a **best-of-family composite**: the server hot path comes from Synap (the only one with measured transport throughput), the client architecture from Vectorizer (the only true multiplexer), the spec and operational features from Nexus — plus upgrades none of the three has (bin `Bytes` −33% on embeddings, caps in every language, typed error-code parsing). The full donor map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Every HiveLLM server is Rust, so Thunder is **one full stack + three client-only ports**:
+Every HiveLLM server is Rust, so Thunder is **one full stack + four client-only ports**:
 
-| Layer | Rust | TypeScript / Python / C# | Contents |
+| Layer | Rust | TypeScript / Python / C# / Go | Contents |
 |---|---|---|---|
 | `wire` | ✅ | ✅ | Value model, `Request`/`Response`, frame codec, caps, `PUSH_ID`. Pure functions over buffers — zero I/O, zero product knowledge. |
 | `client` | ✅ | ✅ | Dial (+ optional TLS), handshake per config, background reader with demux by id, connect + per-call timeouts, bounded in-flight, lazy reconnect, push hook, typed errors with prefix parsing. |
@@ -68,7 +68,7 @@ Every Thunder client, in every language: demux by id (pipelining) · frame cap o
 
 ## 📦 Packages
 
-All four packages are **published at 0.1.0**. Wire v1 is frozen; the API is not — 0.x may still break.
+All four registry packages are at **0.1.1**, with Go alongside them as a fifth full client. Wire v1 is frozen; the API is not — 0.x may still break.
 
 | Language | Package | Install | Serialization |
 |---|---|---|---|
@@ -76,7 +76,7 @@ All four packages are **published at 0.1.0**. Wire v1 is frozen; the API is not 
 | TypeScript | `@hivehub/thunder` (npm) | `npm i @hivehub/thunder` | `@msgpack/msgpack` ^3 |
 | Python | `hivellm-thunder` (PyPI) — sync **and** async clients | `pip install hivellm-thunder` | `msgpack` ≥1.1 |
 | C# | `HiveLLM.Thunder` (NuGet, `net8.0`) | `dotnet add package HiveLLM.Thunder` | `MessagePack` 2.5.x — low-level writer/reader only, never `Typeless` |
-| Go *(fast-follow)* | `github.com/hivellm/thunder-go` | *not yet published* | `vmihailenco/msgpack` v5 |
+| Go | `github.com/hivellm/thunder-go` | *implemented and tested; released by git tag* | `vmihailenco/msgpack` v5 |
 
 Two registry names differ from their import names, both deliberately:
 
@@ -133,7 +133,7 @@ await using var client = await ThunderClient.ConnectAsync("myapp://localhost", a
 var pong = await client.CallAsync("PING");
 ```
 
-Per-language detail: [rust](rust/) · [typescript/README.md](typescript/README.md) · [python/README.md](python/README.md) · [csharp/README.md](csharp/README.md).
+Per-language detail: [rust](rust/) · [typescript/README.md](typescript/README.md) · [python/README.md](python/README.md) · [csharp/README.md](csharp/README.md) · [go/README.md](go/README.md).
 
 ## 🗂 Configuration — one standard, zero product knowledge
 
@@ -199,7 +199,8 @@ A client or server configured with TLS but built without the `tls` feature fails
 - **Golden-vector corpus** (`conformance/vectors/`) — language-neutral data files pairing exact frame bytes with expected decoded structure: the canonical PING/PONG pair, the full value matrix (NaN, `i64::MIN/MAX`, empty containers, non-string map keys), framing edges (partial frames, cap+1 rejection **without allocation**), and legacy-tolerance vectors (Synap int-array `Bytes`, map-shaped `Request` — decoded forever, never emitted).
 - **Reference cross-decode** — every canonical frame round-trips through `nexus-protocol` in CI: Thunder is pinned to the family's existing reference, not to itself.
 - **Pairwise cross-language fuzz** — random value trees encoded by each language, decoded by every other.
-- **Live interop** (release path, env-gated) — smoke clients against real Synap / Nexus / Vectorizer instances.
+- **Live cross-language interop** (`python interop/run.py`) — every client dials a **real Rust server over a real socket** and completes the standard `HELLO` handshake plus `PING` / `ECHO` / typed-error round-trips. Not just matching bytes: matching behavior, on the wire. The Go client is verified the same way, outside the automated driver.
+- **Live product interop** (release path, env-gated) — smoke clients against real Synap / Nexus / Vectorizer instances.
 
 One PR changes wire behavior in all languages at once, or fails CI. Details: [§3](docs/analysis/03-conformance-and-versioning.md).
 
@@ -207,9 +208,28 @@ One PR changes wire behavior in all languages at once, or fails CI. Details: [§
 
 The family already holds committed evidence: **SynapRPC ≈ 3× RESP3 and ≈ 3× Redis 7 per-op** on the same server/host (`Synap/docs/benchmarks/redis-vs-synap.md`), and **Nexus-over-RPC beats Neo4j-over-Bolt end-to-end** (250 µs vs 2,305 µs serial point read; 34.8k vs 12.1k qps at 64 workers, `Nexus/bench-out/`).
 
-Thunder finishes the job with a **transport-isolated shootout**: Thunder RPC vs **RESP3** vs **Bolt** (minimal v5) vs **HTTP/JSON**, all over the same no-op dispatch engine, same host, harness-parity clients — measuring p50/p99/qps/bytes-on-wire across echo, bulk, embedding, pipelined and connection-storm scenarios.
+Thunder finishes the job with a **transport-isolated shootout**. It began as four lanes (Thunder vs **RESP3** vs **Bolt** vs **HTTP/JSON**) and grew to **fourteen** — every one serving the same no-op dispatch backend, in the same process, on the same host, runtime and allocator, so the wire is the only variable:
 
-**Gate G5 — always win**: no quantitative claim ships until Thunder beats every competitor in **every cell** of the matrix (margin ≥ 10%); a losing cell is a release-blocking optimization task. Design and rationale: [§6](docs/analysis/06-benchmark-mandate.md).
+| Group | Lanes |
+|---|---|
+| Family peers (gate G5) | `thunder` · `resp3` · `bolt` · `http` |
+| Binary DB wires | `memcached` · `mongodb` (real `bson`) · `postgres` (real `pgwire` server) |
+| Binary RPCs | `msgpack-rpc` (real `rmp-serde`) · `thrift` (real `TCompactProtocol`) · `grpc` (real `tonic`, both sides) · `capnp` (real `capnp-rpc`, both sides) |
+| Messaging | `nats` (real `async-nats` client) · `mqtt` (MQTT 5 request/response) |
+| Diagnostic | `thunder-stripped` — what the server's features cost vs what the wire costs |
+
+Where a real Rust implementation of a protocol exists, the lane **uses it** rather than a hand-written peer. That policy paid for itself: swapping the PostgreSQL lane from our own listener to the production `pgwire` crate, at **byte-identical traffic**, cost 2–4× throughput — meaning hand-written benchmark peers *flatter* the protocol they model instead of hobbling it.
+
+Two questions the expanded matrix settled:
+
+- **Is Thunder's sync-tiny deficit a defect?** No — it is the price of multiplexing. gRPC, the only other multiplexed peer, trails the FIFO leaders by 57% in the same cell where Thunder trails by 6%.
+- **Do codec choice and zero-copy matter here?** No, and this is the more actionable result. `TCompactProtocol` measures statistically identical to MessagePack at this payload shape, and Cap'n Proto — which has no parse step at all — ends up with the heaviest wire in the field.
+
+Full analysis, including what the numbers are *not*: **[docs/analysis/protocol-shootout/](docs/analysis/protocol-shootout/)**. Original design and rationale: [§6](docs/analysis/06-benchmark-mandate.md).
+
+**Gate G5 — always win**: no quantitative claim ships until Thunder beats every competitor in **every cell** of the matrix (margin ≥ 10%); a losing cell is a release-blocking optimization task. The ten expansion lanes are *reference lanes* — deliberately outside `Lane::ALL`, so no G5 claim rests on any of them.
+
+> **No shootout number is citable yet.** The harness measures its own noise floor and **refuses runs** whose qps dispersion exceeds 5%; this development host fails that check (worst case 25.6%). BEN-031 needs a quiet host, and the analysis claims only large repeatable ratios until it gets one.
 
 One level up, a **product-level RPC-vs-HTTP harness** (`thunder-bench --product-harness`) measures the win on a product's *real* engine: three scenarios — bulk ingest, small high-QPS call, pipelined polling — with the **same handler behind both transports**, so the engine cancels out and the transport is the only variable. A product implements one trait to point it at its engine; acceptance floors are **seeded** from Nexus's table (point read 320 → 120 µs, bulk 780 → 220 ms) and each product recalibrates its own from its first measured run — seeds are never results, and no number is cited while the shootout gate is unsettled.
 
@@ -217,12 +237,12 @@ One level up, a **product-level RPC-vs-HTTP harness** (`thunder-bench --product-
 
 | Phase | Deliverable | Gate | Status |
 |---|---|---|---|
-| **P0** | Names reserved, spec transplanted, profile spec, corpus v0 | G0 | ⏳ next |
-| **P1** | Rust `wire`+`client`+`server`, conformance harness, shootout skeleton | G1 | — |
-| **P2** | Synap / Nexus / Vectorizer Rust swap; `-protocol` crates dissolved; Lexum unblocked | G2 | — |
-| **P3** | TypeScript / Python / C# packages + 9 SDK swaps (≈11k LOC deleted) | G3 | — |
-| **P4** | Uniform quality floor + transport shootout vs Bolt / RESP3 / HTTP | G4 · **G5** | — |
-| **P5** | Go port, push/streaming v-next, PHP/Java on demand | — | — |
+| **P0** | Names reserved, spec transplanted, profile spec, corpus v0 | G0 | ✅ done |
+| **P1** | Rust `wire`+`client`+`server`, conformance harness, shootout skeleton | G1 | ✅ done |
+| **P2** | Synap / Nexus / Vectorizer Rust swap; `-protocol` crates dissolved; Lexum unblocked | G2 | 🔧 owner-driven, in the product repos |
+| **P3** | TypeScript / Python / C# packages + SDK swaps | G3 | ✅ packages done |
+| **P4** | Uniform quality floor + transport shootout (grew to 14 lanes) | G4 · **G5** | ✅ built · **G5 blocked on a quiet host** |
+| **P5** | Go port, push/streaming v-next, PHP/Java on demand | — | 🔧 Go client done; push/streaming at proposal stage |
 
 Full milestones: [docs/ROADMAP.md](docs/ROADMAP.md) · task graph: [docs/DAG.md](docs/DAG.md) · per-product migration and risks: [§4 of the analysis](docs/analysis/04-adoption-plan.md).
 
@@ -242,6 +262,7 @@ Full milestones: [docs/ROADMAP.md](docs/ROADMAP.md) · task graph: [docs/DAG.md]
 | [docs/analysis/04-adoption-plan.md](docs/analysis/04-adoption-plan.md) | Phases P0–P5, gates, effort, risks |
 | [docs/analysis/05-protocol-crate-dissolution.md](docs/analysis/05-protocol-crate-dissolution.md) | Eliminating the per-product `-protocol` crates and their publishing choreography |
 | [docs/analysis/06-benchmark-mandate.md](docs/analysis/06-benchmark-mandate.md) | Transport shootout vs Bolt / RESP3 / HTTP and the always-win gate |
+| [docs/analysis/protocol-shootout/](docs/analysis/protocol-shootout/) | The 14-lane expansion: method and lane inventory, the multiplexing question answered against gRPC, framing vs codec vs topology isolated, the messaging verdict (AMQP and Kafka refused, with reasoning), conclusions |
 
 ## 🐝 HiveLLM Family
 

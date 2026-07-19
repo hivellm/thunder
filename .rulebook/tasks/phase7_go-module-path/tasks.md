@@ -1,11 +1,11 @@
 ## 1. Implementation
-- [ ] 1.1 Change `go/go.mod` to `module github.com/hivellm/thunder/go`
-- [ ] 1.2 Update every internal import in `go/` (and the interop/conformance harnesses if they reference the module path)
-- [ ] 1.3 Verify the module resolves the way a consumer would reach it — a subdirectory module needs the `go/vX.Y.Z` tag form, so confirm the tag shape is right rather than assuming
-- [ ] 1.4 Add the Go tagging step to the release workflow so `go/v0.2.0` is pushed alongside `v0.2.0`, keeping the single release train
-- [ ] 1.5 Fix the root README's Packages table — it currently documents an import path that fails
+- [x] 1.1 SUPERSEDED BY OWNER DECISION — the module path stays `github.com/hivellm/thunder-go` and the repository was created for it; `go/` is now a git **submodule** pointing there. The proposal argued for renaming to `github.com/hivellm/thunder/go` instead; that is not what shipped. Original text: Change `go/go.mod` to `module github.com/hivellm/thunder/go`
+- [x] 1.2 Not needed under the submodule route — the module path is unchanged, so no import moved. Original text: Update every internal import in `go/` (and the interop/conformance harnesses if they reference the module path)
+- [x] 1.3 Verified: `github.com/hivellm/thunder-go` now returns 200 and clones; the repository content matched the monorepo byte for byte (modulo line endings) before conversion. Original text: Verify the module resolves the way a consumer would reach it — a subdirectory module needs the `go/vX.Y.Z` tag form, so confirm the tag shape is right rather than assuming
+- [ ] 1.4 STILL OPEN, and now harder: a submodule means the Go release tag lives in the OTHER repository, so the single release train no longer covers it automatically. Decide how `thunder-go` gets tagged in step with `v0.2.0`. Original text: Add the Go tagging step to the release workflow so `go/v0.2.0` is pushed alongside `v0.2.0`, keeping the single release train
+- [x] 1.5 Done — the Packages table now shows `go get github.com/hivellm/thunder-go`, which resolves. Original text: Fix the root README's Packages table — it currently documents an import path that fails
 
 ## 2. Tail (docs + tests — check or waive with tailWaiver)
-- [ ] 2.1 Update or create documentation covering the implementation — `go/README.md` and the root README with the resolvable path and the `@v` form a consumer types
-- [ ] 2.2 Write tests covering the new behavior — the Go test suite still passes under the new module path, and the conformance corpus run is unaffected
-- [ ] 2.3 Run tests and confirm they pass — Go gate green (gofmt, vet, test), and ideally a real `go get` of the tagged path from outside the repo, since resolution is the whole point of this task
+- [x] 2.1 Done — `go/README.md` explains the mirror relationship and that the corpus checks skip here and run upstream. Original text: Update or create documentation covering the implementation — `go/README.md` and the root README with the resolvable path and the `@v` form a consumer types
+- [x] 2.2 Done differently than planned: the real finding was that the standalone mirror had TWO FAILING TESTS (they read ../../conformance/, absent outside the monorepo). Made them skip in the mirror and verified they still run for real upstream — TestCorpusVectors walks every vector in the monorepo. Original text: Write tests covering the new behavior — the Go test suite still passes under the new module path, and the conformance corpus run is unaffected
+- [ ] 2.3 PARTIAL — Go suite green both in the monorepo and in the mirror. Still to verify once the submodule commit is pushed: a real `go get github.com/hivellm/thunder-go` from outside, plus the CI lanes now that every checkout initializes submodules. Original text: Run tests and confirm they pass — Go gate green (gofmt, vet, test), and ideally a real `go get` of the tagged path from outside the repo, since resolution is the whole point of this task

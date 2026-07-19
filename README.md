@@ -76,7 +76,7 @@ All four registry packages are at **0.2.0**, with Go alongside them as a fifth f
 | TypeScript | `@hivehub/thunder` (npm) | `npm i @hivehub/thunder` | `@msgpack/msgpack` ^3 |
 | Python | `hivellm-thunder` (PyPI) — sync **and** async clients | `pip install hivellm-thunder` | `msgpack` ≥1.1 |
 | C# | `HiveLLM.Thunder` (NuGet, `net8.0`) | `dotnet add package HiveLLM.Thunder` | `MessagePack` 2.5.x — low-level writer/reader only, never `Typeless` |
-| Go | `github.com/hivellm/thunder-go` | *implemented and tested; released by git tag* | `vmihailenco/msgpack` v5 |
+| Go | `github.com/hivellm/thunder-go` | `go get github.com/hivellm/thunder-go` | `vmihailenco/msgpack` v5 |
 
 Two registry names differ from their import names, both deliberately:
 

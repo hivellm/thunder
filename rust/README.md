@@ -2,9 +2,9 @@
 
 The Rust lane of the Thunder RPC family — and the only one with a **server**.
 Every HiveLLM server is Rust, so this crate carries the full stack while
-TypeScript / Python / C# / Go ship clients only.
+TypeScript / Python / C# / Go / PHP ship clients only.
 
-Wire bytes are identical across all five lanes: every implementation pins its
+Wire bytes are identical across all six lanes: every implementation pins its
 default test run to `conformance/vectors/*.yaml` (SPEC-005), so one PR changes
 wire behavior everywhere or fails CI.
 
@@ -60,7 +60,7 @@ for the runtime (PKG-013).
   - `tls/` — the optional transport layer.
 - `thunder-bench/` — the transport shootout harness (not published). Fourteen
   protocol lanes over one shared no-op backend; see
-  [docs/analysis/protocol-shootout/](../docs/analysis/protocol-shootout/).
+  [docs/analysis/protocol-shootout/](https://github.com/hivellm/thunder/tree/main/docs/analysis/protocol-shootout/).
 
 ## Client
 
@@ -187,9 +187,9 @@ let legacy = Config::standard()
 ```
 
 `scheme` and `port` have no default — identity is yours. Everything else is
-pinned to [`conformance/standard.yaml`](../conformance/standard.yaml) so the
-five languages cannot disagree. Full table in the
-[root README](../README.md#-configuration--one-standard-zero-product-knowledge).
+pinned to [`conformance/standard.yaml`](https://github.com/hivellm/thunder/blob/main/conformance/standard.yaml) so the
+six languages cannot disagree. Full table in the
+[root README](https://github.com/hivellm/thunder/blob/main/README.md#-configuration--one-standard-zero-product-knowledge).
 
 ## Test / quality gate
 
@@ -218,7 +218,7 @@ cargo run -p thunder-bench --release -- --scenario all --out bench-out/
 The harness measures its own noise floor and **refuses runs** whose qps
 dispersion exceeds 5% (BEN-011) — a benchmark you cannot trust should not
 produce a number. Results and honest caveats:
-[docs/analysis/protocol-shootout/](../docs/analysis/protocol-shootout/).
+[docs/analysis/protocol-shootout/](https://github.com/hivellm/thunder/tree/main/docs/analysis/protocol-shootout/).
 
 ## Reusing the framing with your own body model
 
@@ -323,12 +323,12 @@ simple case stays short. `type Identity = ();` is still required on every impl
 
 | Spec | Covers |
 |---|---|
-| [SPEC-001](../docs/specs/SPEC-001-wire-format.md) | Wire format, `Value`, framing, caps (`WIRE-`) |
-| [SPEC-002](../docs/specs/SPEC-002-configuration.md) | Config dimensions (`PRO-`) |
-| [SPEC-003](../docs/specs/SPEC-003-client.md) | Client contract (`CLT-`) |
-| [SPEC-004](../docs/specs/SPEC-004-server.md) | Server contract (`SRV-`) |
-| [SPEC-005](../docs/specs/SPEC-005-conformance.md) | Corpus and cross-language gates (`CNF-`) |
-| [SPEC-006](../docs/specs/SPEC-006-packaging-release.md) | Packaging and the release train (`PKG-`) |
+| [SPEC-001](https://github.com/hivellm/thunder/blob/main/docs/specs/SPEC-001-wire-format.md) | Wire format, `Value`, framing, caps (`WIRE-`) |
+| [SPEC-002](https://github.com/hivellm/thunder/blob/main/docs/specs/SPEC-002-configuration.md) | Config dimensions (`PRO-`) |
+| [SPEC-003](https://github.com/hivellm/thunder/blob/main/docs/specs/SPEC-003-client.md) | Client contract (`CLT-`) |
+| [SPEC-004](https://github.com/hivellm/thunder/blob/main/docs/specs/SPEC-004-server.md) | Server contract (`SRV-`) |
+| [SPEC-005](https://github.com/hivellm/thunder/blob/main/docs/specs/SPEC-005-conformance.md) | Corpus and cross-language gates (`CNF-`) |
+| [SPEC-006](https://github.com/hivellm/thunder/blob/main/docs/specs/SPEC-006-packaging-release.md) | Packaging and the release train (`PKG-`) |
 
 ## License
 

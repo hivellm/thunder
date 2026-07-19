@@ -8,6 +8,7 @@
 # `use thunder::`. Only the registry identity changes, which is the only place
 # the collision exists.
 name = "thunder-rpc"
+readme = "../README.md"
 description = "HiveLLM binary RPC — one crate: wire codec (v1, frozen), multiplexed client, and the family server hot path, behind features (SPEC-001/003/004)"
 version.workspace = true
 edition.workspace = true

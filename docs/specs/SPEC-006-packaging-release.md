@@ -60,14 +60,21 @@ publishes, and what the family **stops** publishing because of it.
   construction. (On crates.io this is now literally one crate, not three lockstep crates.)
   Lanes may publish from the tagged commit by other means, which the requirement permits —
   the constraint is *one tag, one version*, not *one mechanism*: **Go** and **PHP** release
-  from a VCS tag, and **NuGet** is published by hand after its automated job returned 403 on
-  three consecutive releases. All remain gated: `release.yml` runs their checks and the
-  tag-vs-manifest check on the tagged commit before any lane ships.
-  Two lanes authenticate by **OIDC trusted publishing** rather than a stored credential —
-  PyPI, and npm since it gained the capability. This is the preferred mechanism where a
-  registry offers it: there is no token to leak, rotate, or find in a product repo, and it is
-  what made npm automatable at all. The `@hivehub` org requires an OTP on publish, which no
-  *stored* credential can produce; an OIDC identity is not a stored credential.
+  from a VCS tag in their own repository. Both remain gated: `release.yml` runs their checks
+  and the tag-vs-manifest check on the tagged commit before any lane ships.
+- **PKG-014** [P0] Every registry lane SHALL authenticate by **OIDC trusted publishing** where
+  the registry offers it — crates.io, npm, PyPI and NuGet all do. No publishing credential
+  belongs in this repository's secrets: each registry verifies the workflow's identity and
+  issues a credential lasting minutes to an hour.
+  This is not a preference. Stored credentials failed this project three separate ways: a
+  NuGet key expired silently and 403'd three consecutive releases; npm could not be automated
+  at all because the org requires an OTP, which no *stored* credential can produce; and both
+  lanes were then published by hand, which is how a registry ends up a version behind unnoticed
+  (GH #8). A credential that does not persist cannot go stale, cannot leak, and needs no human
+  to type a code.
+  A registry without trusted publishing MAY use a stored token, but the token's expiry MUST be
+  recorded where the release process will surface it — the failure mode is not the token being
+  wrong, it is the token being silently out of date.
 - **PKG-012** [P0] Semver policy: new commands/products never involve Thunder; profile field with
   default, new corpus vectors, new language port = **minor**; decode-tolerance removal, floor
   default changes, public API breaks = **major**; canonical byte changes = never (NFR-01).

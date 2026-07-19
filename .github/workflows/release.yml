@@ -15,29 +15,35 @@ name: Release
 # do not delete, PyPI will not let a version be reused, NuGet only unlists — so
 # the gate is the last place a mistake is still cheap.
 #
-# Three lanes publish outside this file, each for its own reason:
-#   - Go   — releases from a VCS module tag. Since `go/` became a submodule
-#            that tag lives in ANOTHER repository, so it is a manual step this
-#            workflow cannot perform (it would need write access to
-#            hivellm/thunder-go). After tagging here:
+# Every registry lane authenticates by OIDC trusted publishing — crates.io, npm,
+# PyPI and NuGet. There is NO publishing credential in this repository's secrets
+# and none to rotate: each registry verifies this workflow's identity and issues
+# a credential that lives minutes to an hour.
 #
-#              cd go && git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z
+# That took three separate failures to arrive at, and each one is worth
+# remembering because the fix was never "store the token more carefully":
+#   - NuGet 403d on three consecutive releases from a key that had silently
+#     expired (they last at most a year).
+#   - npm could not be automated at all, because the @hivehub org requires an
+#     OTP and no *stored* credential can produce one.
+#   - Both were being finished by hand, which is how a registry ends up a
+#     version behind with nobody noticing.
+# OIDC answers all of it: a credential that does not persist cannot go stale,
+# cannot leak, and does not need a human to type a code.
 #
-#            Skipping it does not fail anything loudly — `go get` simply
-#            resolves no release, which is how v0.2.0 shipped with the Go lane
-#            published in name only. The verify job below reports the tag, so
-#            the omission is visible rather than silent.
-#   - NuGet — its job 403d on three consecutive releases and every one was
-#            finished by hand, so the job was removed rather than left failing.
-#            See the note where the job used to be for how to publish, and how
-#            to try restoring automation.
-# Both are still gated: the gate runs their checks on the tagged commit, and the
-# verify job reports what each registry actually has.
+# Two lanes still publish outside this file, both from a VCS tag:
+#   - Go  — `hivellm/thunder-go`. Since `go/` became a submodule the tag lives
+#           in ANOTHER repository, which this workflow has no write access to.
+#   - PHP — `hivellm/thunder-php`, same arrangement (PKG-051).
+# After tagging here, tag each submodule:
 #
-# npm was in this list until trusted publishing (OIDC) made it automatable. The
-# blocker was never a bad credential — it was that the org requires an OTP,
-# which no *stored* credential can produce. OIDC is not a stored credential, so
-# the objection does not apply to it.
+#     cd go  && git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z
+#     cd php && git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z
+#
+# Skipping that fails nothing loudly — `go get` and Composer simply resolve no
+# release, which is how v0.2.0 shipped with the Go lane published in name only.
+# Both are gated, and the verify job reports their tags so the omission is
+# visible rather than silent.
 
 on:
   push:
@@ -143,17 +149,33 @@ jobs:
     name: crates.io (thunder-rpc)
     needs: gate
     runs-on: ubuntu-latest
+    environment: crates
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
+      # Trusted Publishing: crates.io verifies this workflow's OIDC identity and
+      # mints a 30-minute token. No CARGO_REGISTRY_TOKEN to store or rotate.
+      #
+      # One-time owner setup at https://crates.io/crates/thunder-rpc/settings
+      #   owner: hivellm | repository: thunder | workflow: release.yml
+      #   environment: crates
+      #
+      # Request the token immediately before publishing: it is short-lived, and
+      # a slow build between the two steps would burn the window.
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
       # The crate is `thunder-rpc`; `thunder` was taken (a dormant 2018 crate).
       # The lib name is still `thunder`, so consumers `use thunder::`.
       - name: Publish
         working-directory: rust
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish -p thunder-rpc
 
   npm:
@@ -235,38 +257,61 @@ jobs:
         with:
           packages-dir: python/dist
 
-  # NuGet has NO publish job, by owner decision after three failed releases.
-  #
-  # The job returned 403 on 0.1.1, 0.2.0 and 0.2.1, and each was finished by
-  # hand. A job that fails every release teaches people to ignore a red release
-  # run, and that habit is more expensive than the manual step — a red run has
-  # to mean something.
-  #
-  # Published by hand from the tagged commit:
-  #
-  #   cd csharp
-  #   dotnet pack -c Release
-  #   dotnet nuget push "HiveLLM.Thunder/bin/Release/HiveLLM.Thunder.<version>.nupkg" \
-  #     -s https://api.nuget.org/v3/index.json -k "$NUGET_KEY"
-  #
-  # Name the exact file. A glob would also push whatever older .nupkg survives
-  # in bin/Release — there are usually several — and a registry publish cannot
-  # be undone.
-  #
-  # This is a credential problem, and credential problems have fixes — the same
-  # key works from a laptop and 403s from the runner, which points at the stored
-  # secret rather than the key itself —
-  # most often a trailing newline captured when pasting into GitHub, which
-  # `dotnet nuget push` sends verbatim. If someone wants to try again: re-paste
-  # the secret with no trailing whitespace, restore this job from git history
-  # (it was removed in the 0.2.1 cycle), and cut a release. If it publishes,
-  # keep it.
-  #
-  # Still gated either way: the gate above builds C# with -warnaserror and runs
-  # its tests on the tagged commit, and the tag-vs-manifest check verifies the
-  # .csproj version — so a hand publish cannot ship a red commit or a version
-  # the tag disagrees with. The verify job below reports NuGet's published
-  # version, so a forgotten hand publish surfaces instead of going unnoticed.
+  nuget:
+    name: NuGet (HiveLLM.Thunder)
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Pack
+        working-directory: csharp
+        run: dotnet pack -c Release
+      # This job existed before, returned 403 on three consecutive releases, and
+      # was deleted. The cause was a stored API key that had gone stale — NuGet
+      # keys expire at 365 days, silently — and every release was finished by
+      # hand.
+      #
+      # Trusted Publishing removes the thing that broke: there is no stored key.
+      # nuget.org verifies this workflow's OIDC identity and issues a key that
+      # lives one hour. A credential that cannot go stale cannot go stale
+      # unnoticed.
+      #
+      # One-time owner setup at https://www.nuget.org/account/trustedpublishing
+      #   repository owner: hivellm | repository: thunder
+      #   workflow file: release.yml   (file name only, no path)
+      #   environment: nuget
+      #
+      # `user` is the nuget.org PROFILE NAME, not an email address. It is not a
+      # secret, but it lives in one so the workflow does not have to be edited
+      # if the account changes.
+      - name: NuGet login (OIDC to a one-hour key)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish
+        working-directory: csharp
+        # The exact file, not a glob. On a clean runner a glob matches one
+        # package and works by luck; if an older version's .nupkg ever survives
+        # in bin/Release the glob would push that too — and a registry publish
+        # cannot be undone.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE="HiveLLM.Thunder/bin/Release/HiveLLM.Thunder.${VERSION}.nupkg"
+          test -f "$PACKAGE" || { echo "::error::$PACKAGE was not produced by dotnet pack"; exit 1; }
+          dotnet nuget push "$PACKAGE" \
+            -s https://api.nuget.org/v3/index.json \
+            -k "${{ steps.login.outputs.NUGET_API_KEY }}" \
+            --skip-duplicate
 
   # The release is not done until every registry actually has it (PKG-011).
   #
@@ -276,14 +321,15 @@ jobs:
   # hand-published, so this is also what catches a release where that step was
   # forgotten.
   #
-  # `needs` the automated publishers so it runs after them. NuGet still
-  # publishes by hand and may not be up yet when this fires — rerun the job once
-  # it is. That is the intended workflow, not a flaw: this is the only thing
-  # that will tell you a hand publish was forgotten, which is exactly how NuGet
-  # sat a version behind before anyone noticed.
+  # `needs` every publisher, all four of which are now automated. This still
+  # earns its place: a job can succeed and leave the registry inconsistent (a
+  # `--skip-duplicate` that skipped the wrong thing, a publish that landed under
+  # a different version), and nothing else asks whether the *set* agrees. That
+  # question going unasked is how NuGet sat at 0.1.0 while the other three moved
+  # to 0.2.0.
   verify:
     name: every registry has this release
-    needs: [crates, npm, pypi]
+    needs: [crates, npm, pypi, nuget]
     runs-on: ubuntu-latest
     # `always()` so this still runs when a publish job failed — that is
     # precisely when the report is worth having. Without it, a failed NuGet

@@ -15,7 +15,7 @@ name: Release
 # do not delete, PyPI will not let a version be reused, NuGet only unlists — so
 # the gate is the last place a mistake is still cheap.
 #
-# Two lanes publish outside this file, each for its own reason:
+# Three lanes publish outside this file, each for its own reason:
 #   - Go   — releases from a VCS module tag. Since `go/` became a submodule
 #            that tag lives in ANOTHER repository, so it is a manual step this
 #            workflow cannot perform (it would need write access to
@@ -29,7 +29,12 @@ name: Release
 #            the omission is visible rather than silent.
 #   - npm  — the @hivehub org requires an OTP on publish, which no stored
 #            credential can provide. Published by hand; see the note below.
-# Both are still gated: the gate runs their checks on the tagged commit.
+#   - NuGet — its job 403d on three consecutive releases and every one was
+#            finished by hand, so the job was removed rather than left failing.
+#            See the note by the pypi job for how to publish and how to try
+#            restoring automation.
+# All three are still gated: the gate runs their checks on the tagged commit,
+# and the verify job reports what each registry actually has.
 
 on:
   push:
@@ -188,45 +193,39 @@ jobs:
         with:
           packages-dir: python/dist
 
-  nuget:
-    name: NuGet (HiveLLM.Thunder)
-    needs: gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
-      - name: Pack
-        working-directory: csharp
-        run: dotnet pack -c Release
-      # The API key is the thing that breaks here — it failed the 0.1.1 and
-      # 0.2.0 releases with a 403, both times because the stored secret had
-      # gone stale (NuGet keys expire at 365 days, silently). Say so plainly
-      # instead of letting `dotnet nuget push` report it as a generic
-      # permission error the next person has to decode.
-      - name: Check the API key is present
-        run: |
-          if [ -z "${{ secrets.NUGET_API_KEY }}" ]; then
-            echo "::error::NUGET_API_KEY is empty. Set it in Settings → Secrets and variables → Actions. NuGet keys expire after at most a year and stop working with no warning."
-            exit 1
-          fi
-      - name: Publish
-        working-directory: csharp
-        # The exact file, not a glob. On a clean runner the glob matches one
-        # package and works by luck; if a previous version's .nupkg ever
-        # survives in bin/Release (incremental build, restored cache) the glob
-        # would push it too — and a registry publish cannot be undone.
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          PACKAGE="HiveLLM.Thunder/bin/Release/HiveLLM.Thunder.${VERSION}.nupkg"
-          test -f "$PACKAGE" || { echo "::error::$PACKAGE was not produced by dotnet pack"; exit 1; }
-          dotnet nuget push "$PACKAGE" \
-            -s https://api.nuget.org/v3/index.json \
-            -k "${{ secrets.NUGET_API_KEY }}" \
-            --skip-duplicate
+  # NuGet has NO publish job, by owner decision after three failed releases.
+  #
+  # The job returned 403 on 0.1.1, 0.2.0 and 0.2.1, and each was finished by
+  # hand. A job that fails every release teaches people to ignore a red release
+  # run, and that habit is more expensive than the manual step — a red run has
+  # to mean something.
+  #
+  # Published by hand from the tagged commit:
+  #
+  #   cd csharp
+  #   dotnet pack -c Release
+  #   dotnet nuget push "HiveLLM.Thunder/bin/Release/HiveLLM.Thunder.<version>.nupkg" \
+  #     -s https://api.nuget.org/v3/index.json -k "$NUGET_KEY"
+  #
+  # Name the exact file. A glob would also push whatever older .nupkg survives
+  # in bin/Release — there are usually several — and a registry publish cannot
+  # be undone.
+  #
+  # Unlike npm, this is NOT structurally unautomatable: npm needs an OTP, which
+  # no stored credential can satisfy, while this is a credential problem and
+  # credential problems have fixes. The same key works from a laptop and 403s
+  # from the runner, which points at the stored secret rather than the key —
+  # most often a trailing newline captured when pasting into GitHub, which
+  # `dotnet nuget push` sends verbatim. If someone wants to try again: re-paste
+  # the secret with no trailing whitespace, restore this job from git history
+  # (it was removed in the 0.2.1 cycle), and cut a release. If it publishes,
+  # keep it.
+  #
+  # Still gated either way: the gate above builds C# with -warnaserror and runs
+  # its tests on the tagged commit, and the tag-vs-manifest check verifies the
+  # .csproj version — so a hand publish cannot ship a red commit or a version
+  # the tag disagrees with. The verify job below reports NuGet's published
+  # version, so a forgotten hand publish surfaces instead of going unnoticed.
 
   # The release is not done until every registry actually has it (PKG-011).
   #
@@ -236,12 +235,14 @@ jobs:
   # (OTP), so this is also what catches a release where that step was
   # forgotten.
   #
-  # `needs` the automated publishers so it runs after them; a registry that
-  # publishes by hand may not be up yet when this fires, in which case rerun
-  # the job once it is.
+  # `needs` the automated publishers so it runs after them. Two registries now
+  # publish by hand (npm, NuGet) and may not be up yet when this fires — rerun
+  # the job once they are. That is the intended workflow, not a flaw: this is
+  # the only thing that will tell you a hand publish was forgotten, which is
+  # exactly how NuGet sat a version behind before anyone noticed.
   verify:
     name: every registry has this release
-    needs: [crates, pypi, nuget]
+    needs: [crates, pypi]
     runs-on: ubuntu-latest
     # `always()` so this still runs when a publish job failed — that is
     # precisely when the report is worth having. Without it, a failed NuGet

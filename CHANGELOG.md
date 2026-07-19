@@ -15,6 +15,45 @@ cross-language interop matrix.
 All packages version together (PKG-011, one release train), so a version may
 appear here with no changes in a given language.
 
+## [0.2.2] — 2026-07-19
+
+Release plumbing and one packaging fix. **No code changed in any lane** — a
+`0.2.1` peer and a `0.2.2` peer are the same program on the wire, and the
+golden-vector corpus is untouched.
+
+### Added
+
+- **A sixth lane: PHP** (`hivellm/thunder-php`), wire layer and multiplexed
+  client. All 39 corpus vectors pass byte for byte, and the client was verified
+  against a live Python Thunder server — every value variant round-trips,
+  including the ones that usually break silently (`-0.0` with its sign bit, NaN
+  by bit pattern, i64 extremes, binary with NUL and `0xFF`, non-string map
+  keys). PHP has no threads and no event loop, so its client demultiplexes on
+  read rather than from a background reader, and exposes `send`/`collect` for
+  multiple-in-flight; the deviation is documented in the lane's README rather
+  than glossed over. ([PKG-051])
+
+### Changed
+
+- **Every registry now publishes by OIDC trusted publishing** — crates.io, npm,
+  PyPI and NuGet. There is no publishing credential left in the repository's
+  secrets and none to rotate. This took three failures to arrive at, and they
+  were the same failure wearing different clothes: a NuGet key expired silently
+  and 403'd three consecutive releases; npm could not be automated at all
+  because the org requires an OTP, which no *stored* credential can produce;
+  and both were then published by hand, which is how a registry ends up a
+  version behind unnoticed. A credential that does not persist cannot go stale.
+  ([PKG-014])
+
+### Fixed
+
+- **The Rust crate ships its README.** crates.io showed "thunder-rpc v0.2.1
+  appears to have no README.md file": the file lives at `rust/README.md` while
+  the package is `rust/thunder/`, and cargo only packages its own directory.
+  Its relative links became absolute in the same change — the file is now
+  packaged at the crate root with no memory of having come from `rust/`, so
+  `../docs/…` would have pointed outside the repository on crates.io.
+
 ## [0.2.1] — 2026-07-19
 
 Consumability, not behaviour: every change here is about a package being usable
@@ -220,3 +259,5 @@ First release. Published: crates.io, npm, PyPI, NuGet.
 [#8]: https://github.com/hivellm/thunder/issues/8
 [#9]: https://github.com/hivellm/thunder/issues/9
 [#10]: https://github.com/hivellm/thunder/issues/10
+[PKG-014]: docs/specs/SPEC-006-packaging-release.md
+[PKG-051]: docs/specs/SPEC-006-packaging-release.md

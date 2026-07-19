@@ -16,7 +16,17 @@ name: Release
 # the gate is the last place a mistake is still cheap.
 #
 # Two lanes publish outside this file, each for its own reason:
-#   - Go   — releases from a VCS module tag, so there is nothing to push.
+#   - Go   — releases from a VCS module tag. Since `go/` became a submodule
+#            that tag lives in ANOTHER repository, so it is a manual step this
+#            workflow cannot perform (it would need write access to
+#            hivellm/thunder-go). After tagging here:
+#
+#              cd go && git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z
+#
+#            Skipping it does not fail anything loudly — `go get` simply
+#            resolves no release, which is how v0.2.0 shipped with the Go lane
+#            published in name only. The verify job below reports the tag, so
+#            the omission is visible rather than silent.
 #   - npm  — the @hivehub org requires an OTP on publish, which no stored
 #            credential can provide. Published by hand; see the note below.
 # Both are still gated: the gate runs their checks on the tagged commit.

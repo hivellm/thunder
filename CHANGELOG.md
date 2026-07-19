@@ -42,12 +42,21 @@ appear here with no changes in a given language.
   In the standalone mirror the conformance tests skip (the corpus lives in the
   monorepo) and still run for real upstream. ([#9])
 
+### Fixed
+
+- **`thunder-go` now carries the `v0.2.0` tag**, so `go get
+  github.com/hivellm/thunder-go` resolves a release instead of only the default
+  branch. Until this, the Go lane was published in name only — the guard found
+  it on its first run. The module also gained its `LICENSE`; without one
+  `pkg.go.dev` reports the package as unlicensed, which some organisations
+  block outright. ([#9])
+
 ### Known gaps
 
-- **`thunder-go` has no version tag**, so `go get` resolves no release — only
-  the default branch. Found by the new guard on its first run. The Go release
-  tag now lives in a second repository, which the single release train does not
-  yet cover. ([#9])
+- The **Go release tag is a manual step**. It lives in a second repository
+  (`hivellm/thunder-go`) that the release workflow has no write access to, so
+  the train cannot push it. Documented in `release.yml` and reported by the
+  guard, which is what turned it from silent into visible. ([#9])
 
 ## [0.2.0] — 2026-07-18
 

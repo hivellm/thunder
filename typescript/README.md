@@ -127,6 +127,39 @@ keys), framing edges (cap+1 rejection without allocation, partial input, streams
 the frozen legacy tolerances — plus a behavioral suite against an in-process mock
 server mirroring the Rust reference client tests.
 
+## Browser
+
+The package works in a browser bundle, but only the **wire layer** does — the
+client opens sockets, reads files and negotiates TLS, which a browser cannot.
+
+```ts
+import { FrameReader, decodeResponseBody } from "@hivehub/thunder/wire";
+
+const reader = new FrameReader();
+reader.push(chunk);
+for (let body = reader.nextBody(); body; body = reader.nextBody()) {
+  if (body.length === 0) continue;   // keep-alive (WIRE-024)
+  handle(decodeResponseBody(body));
+}
+```
+
+Two ways to reach it, and you do not have to choose deliberately:
+
+- **`@hivehub/thunder/wire`** — the explicit subpath. Says what you mean, works
+  in every bundler and in Node.
+- **`@hivehub/thunder`** — resolves to the same wire-only build under the
+  `browser` export condition, so a bundler targeting the browser gets it
+  automatically.
+
+No aliasing of `fs`/`net`/`tls` is needed. If you added those aliases to work
+around the previous build failure, you can remove them.
+
+What you get: the frame codec, `FrameReader`, the `Value` model, the typed
+errors and the config types. What you do not: `Client` and `Pool`. This mirrors
+the Rust crate's `default-features = false`, which carves out the same pure
+wire layer for the same reason — SPEC-001 WIRE-030 makes the wire layer pure in
+every language, and the package now reflects that.
+
 ## Specs
 
 Normative contracts: [SPEC-001 wire format](../docs/specs/SPEC-001-wire-format.md) ·

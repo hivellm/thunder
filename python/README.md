@@ -136,3 +136,12 @@ ruff check .
 - [SPEC-006 Packaging](../docs/specs/SPEC-006-packaging-release.md)
 
 Apache-2.0 — part of the [Thunder](../README.md) monorepo release train.
+
+## Typing
+
+The package is **typed** (PEP 561): it ships a `py.typed` marker, so `mypy`,
+`pyright` and friends read the annotations directly. Nothing to configure — and
+if you added an `ignore_missing_imports` override for `thunder_rpc` to silence
+the "missing library stubs or py.typed marker" error, you can drop it. That
+override also suppressed real type mismatches against Thunder, so dropping it
+is worth doing.

@@ -12,6 +12,10 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "browser": {
+        "types": "./dist/wire.d.ts",
+        "default": "./dist/wire.js"
+      },
       "import": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
@@ -20,7 +24,18 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
-    }
+    },
+    "./wire": {
+      "import": {
+        "types": "./dist/wire.d.ts",
+        "default": "./dist/wire.js"
+      },
+      "require": {
+        "types": "./dist/wire.d.cts",
+        "default": "./dist/wire.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"

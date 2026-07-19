@@ -27,14 +27,17 @@ name: Release
 #            resolves no release, which is how v0.2.0 shipped with the Go lane
 #            published in name only. The verify job below reports the tag, so
 #            the omission is visible rather than silent.
-#   - npm  — the @hivehub org requires an OTP on publish, which no stored
-#            credential can provide. Published by hand; see the note below.
 #   - NuGet — its job 403d on three consecutive releases and every one was
 #            finished by hand, so the job was removed rather than left failing.
-#            See the note by the pypi job for how to publish and how to try
-#            restoring automation.
-# All three are still gated: the gate runs their checks on the tagged commit,
-# and the verify job reports what each registry actually has.
+#            See the note where the job used to be for how to publish, and how
+#            to try restoring automation.
+# Both are still gated: the gate runs their checks on the tagged commit, and the
+# verify job reports what each registry actually has.
+#
+# npm was in this list until trusted publishing (OIDC) made it automatable. The
+# blocker was never a bad credential — it was that the org requires an OTP,
+# which no *stored* credential can produce. OIDC is not a stored credential, so
+# the objection does not apply to it.
 
 on:
   push:
@@ -153,26 +156,52 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p thunder-rpc
 
-  # npm has NO publish job, deliberately.
-  #
-  # The @hivehub org requires a one-time password on publish, and an OTP is a
-  # human step by design — no token stored in GitHub's secret store can satisfy
-  # it. A job that cannot authenticate would fail every release and train people
-  # to ignore a red release run, which is worse than no job at all.
-  #
-  # So @hivehub/thunder is published by hand, from the tagged commit:
-  #
-  #   cd typescript && npm publish --access public
-  #
-  # What the train still guarantees for the npm package: the gate above runs
-  # typecheck, lint and tests on the tagged commit, and the tag-vs-manifest
-  # check still verifies typescript/package.json — so a hand publish cannot ship
-  # a version the tag disagrees with, and cannot ship a red commit.
-  #
-  # (This costs the provenance attestation `--provenance` gave, which requires
-  # the workflow's OIDC identity. If npm ever supports automation tokens that
-  # bypass OTP for this org, restore the job rather than keep publishing by
-  # hand.)
+  npm:
+    name: npm (@hivehub/thunder)
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      # Node 22, and only here. The package supports Node >=18 and the test
+      # matrix still proves that — this version is the *publisher's*, not the
+      # consumer's. Trusted publishing needs Node >= 22.14 and npm >= 11.5.1,
+      # which is why the rest of the workflow can stay on 20.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Require an npm new enough for trusted publishing
+        working-directory: typescript
+        run: |
+          npm install -g npm@latest
+          npm --version
+      - name: Build
+        working-directory: typescript
+        run: |
+          npm ci
+          npm run build
+      # Trusted Publishing: npm verifies this workflow's OIDC identity and mints
+      # a short-lived credential itself. There is NO token to store, leak or
+      # rotate — the same model PyPI uses above, and the reason this job can
+      # exist at all: the @hivehub org's OTP requirement is what no *stored
+      # credential* could satisfy, and OIDC is not a stored credential.
+      #
+      # One-time owner setup at
+      # https://www.npmjs.com/package/@hivehub/thunder/access
+      #   organization: hivellm | repository: thunder | workflow: release.yml
+      #   environment: npm | allowed actions: npm publish
+      #
+      # No `--provenance` flag: trusted publishing attaches provenance
+      # automatically, and passing it explicitly is not how this path works.
+      - name: Publish
+        working-directory: typescript
+        run: npm publish --access public
 
   pypi:
     name: PyPI (hivellm-thunder)
@@ -224,10 +253,9 @@ jobs:
   # in bin/Release — there are usually several — and a registry publish cannot
   # be undone.
   #
-  # Unlike npm, this is NOT structurally unautomatable: npm needs an OTP, which
-  # no stored credential can satisfy, while this is a credential problem and
-  # credential problems have fixes. The same key works from a laptop and 403s
-  # from the runner, which points at the stored secret rather than the key —
+  # This is a credential problem, and credential problems have fixes — the same
+  # key works from a laptop and 403s from the runner, which points at the stored
+  # secret rather than the key itself —
   # most often a trailing newline captured when pasting into GitHub, which
   # `dotnet nuget push` sends verbatim. If someone wants to try again: re-paste
   # the secret with no trailing whitespace, restore this job from git history
@@ -244,18 +272,18 @@ jobs:
   #
   # This is the check that was missing when NuGet sat at 0.1.0 while the other
   # three moved to 0.2.0: each publish job succeeded or failed on its own, and
-  # nothing ever asked whether the *set* was consistent. npm is hand-published
-  # (OTP), so this is also what catches a release where that step was
+  # nothing ever asked whether the *set* was consistent. NuGet is still
+  # hand-published, so this is also what catches a release where that step was
   # forgotten.
   #
-  # `needs` the automated publishers so it runs after them. Two registries now
-  # publish by hand (npm, NuGet) and may not be up yet when this fires — rerun
-  # the job once they are. That is the intended workflow, not a flaw: this is
-  # the only thing that will tell you a hand publish was forgotten, which is
-  # exactly how NuGet sat a version behind before anyone noticed.
+  # `needs` the automated publishers so it runs after them. NuGet still
+  # publishes by hand and may not be up yet when this fires — rerun the job once
+  # it is. That is the intended workflow, not a flaw: this is the only thing
+  # that will tell you a hand publish was forgotten, which is exactly how NuGet
+  # sat a version behind before anyone noticed.
   verify:
     name: every registry has this release
-    needs: [crates, pypi]
+    needs: [crates, npm, pypi]
     runs-on: ubuntu-latest
     # `always()` so this still runs when a publish job failed — that is
     # precisely when the report is worth having. Without it, a failed NuGet

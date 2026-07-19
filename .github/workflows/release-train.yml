@@ -1,7 +1,8 @@
 name: Release train
 
 # PKG-011 says every package ships one version. Twice that silently stopped
-# being true — npm when its publish job was removed for the OTP requirement,
+# being true — npm when its publish job was removed for an OTP requirement it
+# has since outgrown (trusted publishing),
 # NuGet when its API key was rejected — and both times a consumer found out
 # before we did (GH #8). A promise nothing verifies is a promise that drifts.
 #

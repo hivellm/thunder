@@ -58,11 +58,16 @@ publishes, and what the family **stops** publishing because of it.
 - **PKG-011** [P0] **One release train**: all packages version together (lockstep semver); a
   release publishes every registry from one tag. Wire v1 being frozen makes trains rare by
   construction. (On crates.io this is now literally one crate, not three lockstep crates.)
-  Two lanes publish from the tagged commit by other means, which the requirement permits —
-  the constraint is *one tag, one version*, not *one mechanism*: **Go** releases from a VCS
-  module tag, and **npm** is published by hand because the `@hivehub` org requires an OTP,
-  which no stored credential can supply. Both remain gated: `release.yml` runs their checks
-  and the tag-vs-manifest check on the tagged commit before any lane ships.
+  Lanes may publish from the tagged commit by other means, which the requirement permits —
+  the constraint is *one tag, one version*, not *one mechanism*: **Go** and **PHP** release
+  from a VCS tag, and **NuGet** is published by hand after its automated job returned 403 on
+  three consecutive releases. All remain gated: `release.yml` runs their checks and the
+  tag-vs-manifest check on the tagged commit before any lane ships.
+  Two lanes authenticate by **OIDC trusted publishing** rather than a stored credential —
+  PyPI, and npm since it gained the capability. This is the preferred mechanism where a
+  registry offers it: there is no token to leak, rotate, or find in a product repo, and it is
+  what made npm automatable at all. The `@hivehub` org requires an OTP on publish, which no
+  *stored* credential can produce; an OIDC identity is not a stored credential.
 - **PKG-012** [P0] Semver policy: new commands/products never involve Thunder; profile field with
   default, new corpus vectors, new language port = **minor**; decode-tolerance removal, floor
   default changes, public API breaks = **major**; canonical byte changes = never (NFR-01).

@@ -192,10 +192,28 @@ jobs:
       - name: Pack
         working-directory: csharp
         run: dotnet pack -c Release
+      # The API key is the thing that breaks here — it failed the 0.1.1 and
+      # 0.2.0 releases with a 403, both times because the stored secret had
+      # gone stale (NuGet keys expire at 365 days, silently). Say so plainly
+      # instead of letting `dotnet nuget push` report it as a generic
+      # permission error the next person has to decode.
+      - name: Check the API key is present
+        run: |
+          if [ -z "${{ secrets.NUGET_API_KEY }}" ]; then
+            echo "::error::NUGET_API_KEY is empty. Set it in Settings → Secrets and variables → Actions. NuGet keys expire after at most a year and stop working with no warning."
+            exit 1
+          fi
       - name: Publish
         working-directory: csharp
+        # The exact file, not a glob. On a clean runner the glob matches one
+        # package and works by luck; if a previous version's .nupkg ever
+        # survives in bin/Release (incremental build, restored cache) the glob
+        # would push it too — and a registry publish cannot be undone.
         run: |
-          dotnet nuget push "HiveLLM.Thunder/bin/Release/*.nupkg" \
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE="HiveLLM.Thunder/bin/Release/HiveLLM.Thunder.${VERSION}.nupkg"
+          test -f "$PACKAGE" || { echo "::error::$PACKAGE was not produced by dotnet pack"; exit 1; }
+          dotnet nuget push "$PACKAGE" \
             -s https://api.nuget.org/v3/index.json \
             -k "${{ secrets.NUGET_API_KEY }}" \
             --skip-duplicate
@@ -215,7 +233,12 @@ jobs:
     name: every registry has this release
     needs: [crates, pypi, nuget]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # `always()` so this still runs when a publish job failed — that is
+    # precisely when the report is worth having. Without it, a failed NuGet
+    # push skips the verify and the run says "nuget failed" without saying
+    # which registries did get the release, which is what someone finishing
+    # the publish by hand actually needs to know.
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
         with:

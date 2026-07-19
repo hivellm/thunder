@@ -15,6 +15,40 @@ cross-language interop matrix.
 All packages version together (PKG-011, one release train), so a version may
 appear here with no changes in a given language.
 
+## [Unreleased]
+
+### Added
+
+- **Python is now typed for consumers** (PEP 561): the package ships a
+  `py.typed` marker. The annotations were already written and reached nobody —
+  every downstream checker treated the package as untyped, degrading `Value`,
+  `Client` and `Config` to `Any` at the wire boundary. ([#7])
+- **`@hivehub/thunder/wire`** — the wire layer as its own entry, with no Node
+  builtin, so it bundles for a browser. A `browser` export condition routes the
+  main entry there too, so no aliasing of `fs`/`net`/`tls` is needed. Node
+  consumers are unaffected. The TypeScript counterpart of the Rust crate's
+  `default-features = false`. ([#10])
+- **A release-train guard** (`scripts/check_published_versions.py`): at a tag
+  every registry must match it; otherwise the registries must agree with each
+  other, while the repo running ahead passes. Wired into the release workflow
+  and a weekly job. ([#8])
+
+### Changed
+
+- **`go/` is now a git submodule** of
+  [hivellm/thunder-go](https://github.com/hivellm/thunder-go), so
+  `go get github.com/hivellm/thunder-go` resolves — the README previously
+  documented an import path that 404d. Every CI checkout initializes submodules.
+  In the standalone mirror the conformance tests skip (the corpus lives in the
+  monorepo) and still run for real upstream. ([#9])
+
+### Known gaps
+
+- **`thunder-go` has no version tag**, so `go get` resolves no release — only
+  the default branch. Found by the new guard on its first run. The Go release
+  tag now lives in a second repository, which the single release train does not
+  yet cover. ([#9])
+
 ## [0.2.0] — 2026-07-18
 
 Published: crates.io, npm, PyPI, NuGet — all four aligned. (NuGet skipped 0.1.1,
@@ -169,3 +203,7 @@ First release. Published: crates.io, npm, PyPI, NuGet.
 [#4]: https://github.com/hivellm/thunder/issues/4
 [#5]: https://github.com/hivellm/thunder/issues/5
 [#6]: https://github.com/hivellm/thunder/issues/6
+[#7]: https://github.com/hivellm/thunder/issues/7
+[#8]: https://github.com/hivellm/thunder/issues/8
+[#9]: https://github.com/hivellm/thunder/issues/9
+[#10]: https://github.com/hivellm/thunder/issues/10

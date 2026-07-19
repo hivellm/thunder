@@ -1,3 +1,6 @@
 [submodule "go"]
 	path = go
 	url = https://github.com/hivellm/thunder-go
+[submodule "php"]
+	path = php
+	url = https://github.com/hivellm/thunder-php

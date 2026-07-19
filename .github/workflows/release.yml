@@ -69,6 +69,10 @@ jobs:
         with:
           go-version: "1.25"
           cache-dependency-path: go/go.sum
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
       - name: Rust
         working-directory: rust
         run: |
@@ -102,6 +106,15 @@ jobs:
           test -z "$(gofmt -l .)" || { echo 'gofmt found unformatted files'; gofmt -l .; exit 1; }
           go vet ./...
           go test ./...
+      # PHP is the sixth lane (PKG-051), and like Go it releases from a VCS tag
+      # rather than a push — so it has no publish job either, and this gate is
+      # what stands between a red commit and a Packagist tag.
+      - name: PHP
+        working-directory: php
+        run: |
+          composer install --no-interaction --no-progress
+          vendor/bin/phpstan analyse --no-progress
+          vendor/bin/phpunit
       # The tag is the version. A tag that disagrees with the manifests would
       # publish something other than what it claims — and the wrong version
       # cannot be recalled from any of these registries.

@@ -142,3 +142,33 @@ jobs:
         run: go test ./...
       - name: Conformance corpus (TST-020/021)
         run: go test ./conformance/ -run TestCorpusVectors -v
+
+  php:
+    name: php
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+      - name: Install
+        run: composer install --no-interaction --no-progress
+      # PHPStan at level 9 is the type-check step. PHP has no compiler to catch
+      # a type slip, and in a wire layer a slip becomes a wrong byte that five
+      # other languages have to disagree with — so this runs before the tests,
+      # in the PKG-002 order.
+      - name: Type-check
+        run: vendor/bin/phpstan analyse --no-progress
+      - name: Test
+        run: vendor/bin/phpunit
+      # The corpus runs inside the suite above (TST-020 requires it in the
+      # default command). This re-runs it alone so a failure names the corpus
+      # rather than being one line among two hundred.
+      - name: Conformance corpus (TST-020/021)
+        run: vendor/bin/phpunit --filter ConformanceTest

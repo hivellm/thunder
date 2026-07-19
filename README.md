@@ -5,7 +5,7 @@
 ![Status](https://img.shields.io/badge/version-0.2.1-success.svg)
 ![Wire](https://img.shields.io/badge/wire%20protocol-v1%20(frozen)-success.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)
-![Languages](https://img.shields.io/badge/targets-Rust%20%7C%20TypeScript%20%7C%20Python%20%7C%20C%23%20%7C%20Go-orange.svg)
+![Languages](https://img.shields.io/badge/targets-Rust%20%7C%20TypeScript%20%7C%20Python%20%7C%20C%23%20%7C%20Go%20%7C%20PHP-orange.svg)
 
 [What is Thunder?](#-what-is-thunder) • [The Protocol](#-the-protocol) • [Architecture](#-architecture) • [Packages](#-packages) • [Configuration](#-configuration--one-standard-zero-product-knowledge) • [Conformance](#-conformance) • [Benchmarks](#-benchmarks) • [Roadmap](#-roadmap) • [Documentation](#-documentation)
 
@@ -68,7 +68,7 @@ Every Thunder client, in every language: demux by id (pipelining) · frame cap o
 
 ## 📦 Packages
 
-All four registry packages are at **0.2.1**, with Go alongside them as a fifth full client (tagged `v0.2.1` in [hivellm/thunder-go](https://github.com/hivellm/thunder-go)). Wire v1 is frozen; the API is not — 0.x may still break.
+All four registry packages are at **0.2.1**, with Go alongside them as a fifth full client (tagged `v0.2.1` in [hivellm/thunder-go](https://github.com/hivellm/thunder-go)) and PHP as a sixth ([hivellm/thunder-php](https://github.com/hivellm/thunder-php), not yet published to Packagist). Wire v1 is frozen; the API is not — 0.x may still break.
 
 | Language | Package | Install | Serialization |
 |---|---|---|---|

@@ -116,7 +116,12 @@ publishes, and what the family **stops** publishing because of it.
 - **PKG-050** [P1] `github.com/hivellm/thunder-go` (module tag releases), corpus loader included,
   `vmihailenco/msgpack` v5 with compact ints — enters the release train as a fifth lane.
 - **PKG-051** [P1] `hivellm/thunder` on Packagist (VCS tag releases, so no push step — but the tag
-  must exist), corpus loader included, `rybakit/msgpack` ^0.9 — enters the release train as a sixth
-  lane. Ships the wire layer first; the client (SPEC-003) follows. A lane is not required to be
-  complete to be in the train, but it **is** required to be honest about what it contains: a
-  partial lane states its scope in its README rather than shipping stubs.
+  must exist, as the Go lane learned), corpus loader included, `rybakit/msgpack` ^0.9 — enters the
+  release train as a sixth lane. Wire layer and client both ship. Its source of truth is
+  `github.com/hivellm/thunder-php`, mirrored into the monorepo as a submodule; the corpus tests
+  skip in the standalone checkout and run for real upstream.
+  PHP has no threads and no event loop, so its client demultiplexes on read rather than from a
+  background reader, and exposes `send`/`collect` for multiple-in-flight. The observable contract
+  of CLT-010/013/060 holds — responses matched by id, unknown ids dropped, pushes routed — and the
+  deviation is documented in the lane's README. A lane MAY deviate where a runtime makes the
+  reference design impossible; it MUST NOT claim a parity it does not have.

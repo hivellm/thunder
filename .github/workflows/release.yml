@@ -199,3 +199,32 @@ jobs:
             -s https://api.nuget.org/v3/index.json \
             -k "${{ secrets.NUGET_API_KEY }}" \
             --skip-duplicate
+
+  # The release is not done until every registry actually has it (PKG-011).
+  #
+  # This is the check that was missing when NuGet sat at 0.1.0 while the other
+  # three moved to 0.2.0: each publish job succeeded or failed on its own, and
+  # nothing ever asked whether the *set* was consistent. npm is hand-published
+  # (OTP), so this is also what catches a release where that step was
+  # forgotten.
+  #
+  # `needs` the automated publishers so it runs after them; a registry that
+  # publishes by hand may not be up yet when this fires, in which case rerun
+  # the job once it is.
+  verify:
+    name: every registry has this release
+    needs: [crates, pypi, nuget]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Registries are not instantly consistent after a publish.
+      - name: Let the registries settle
+        run: sleep 120
+      - name: Check published versions
+        run: python scripts/check_published_versions.py tag "${GITHUB_REF_NAME}"

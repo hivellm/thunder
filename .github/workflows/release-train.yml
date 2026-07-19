@@ -1,0 +1,38 @@
+name: Release train
+
+# PKG-011 says every package ships one version. Twice that silently stopped
+# being true — npm when its publish job was removed for the OTP requirement,
+# NuGet when its API key was rejected — and both times a consumer found out
+# before we did (GH #8). A promise nothing verifies is a promise that drifts.
+#
+# This runs the check in "drift" mode: the registries must agree with each
+# other. The repo being ahead of all of them is the normal state between
+# releases and passes, deliberately — a check that fires on every unreleased
+# commit gets ignored, and an ignored check is worse than none.
+#
+# The tag-time check ("every registry matches this release") lives in
+# release.yml, where it can run after the publish jobs.
+
+on:
+  schedule:
+    # Weekly. A lagging registry is not urgent to the minute, but it must not
+    # be able to sit unnoticed for months, which is what happened.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: registries agree with each other
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check published versions
+        run: python scripts/check_published_versions.py drift

@@ -2340,7 +2340,7 @@ dependencies = [
 
 [[package]]
 name = "thunder-bench"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-nats",
  "async-trait",
@@ -2369,7 +2369,7 @@ dependencies = [
 
 [[package]]
 name = "thunder-rpc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nexus-protocol",
  "rcgen",

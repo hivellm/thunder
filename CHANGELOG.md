@@ -15,7 +15,11 @@ cross-language interop matrix.
 All packages version together (PKG-011, one release train), so a version may
 appear here with no changes in a given language.
 
-## [Unreleased]
+## [0.2.1] — 2026-07-19
+
+Consumability, not behaviour: every change here is about a package being usable
+where it already claimed to be. No wire byte, no public API break — a
+`0.2.0` peer and a `0.2.1` peer are indistinguishable on the socket.
 
 ### Added
 

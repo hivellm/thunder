@@ -15,7 +15,10 @@ cross-language interop matrix.
 All packages version together (PKG-011, one release train), so a version may
 appear here with no changes in a given language.
 
-## [0.2.0] — unreleased
+## [0.2.0] — 2026-07-18
+
+Published: crates.io, npm, PyPI, NuGet — all four aligned. (NuGet skipped 0.1.1,
+which never published; see 0.1.1 below.)
 
 Three breaking changes, all in **Rust only**, all filed by products adopting
 Thunder. The wire is untouched: the corpus passes unchanged, `Bytes` still
@@ -96,10 +99,10 @@ lanes have no code changes in this release.
   is recorded in
   [§4 of the analysis](docs/analysis/protocol-shootout/04-messaging-verdict.md).
 
-## [0.1.2] — unreleased
+## [0.1.2] — never published
 
 Superseded by 0.2.0 before publication; its three changes are listed above
-([#2], [#3], [#5]). No package was published at this version.
+([#2], [#3], [#5]).
 
 ## [0.1.1] — 2026-07-18
 

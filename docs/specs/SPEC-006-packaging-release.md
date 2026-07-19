@@ -115,3 +115,8 @@ publishes, and what the family **stops** publishing because of it.
 
 - **PKG-050** [P1] `github.com/hivellm/thunder-go` (module tag releases), corpus loader included,
   `vmihailenco/msgpack` v5 with compact ints — enters the release train as a fifth lane.
+- **PKG-051** [P1] `hivellm/thunder` on Packagist (VCS tag releases, so no push step — but the tag
+  must exist), corpus loader included, `rybakit/msgpack` ^0.9 — enters the release train as a sixth
+  lane. Ships the wire layer first; the client (SPEC-003) follows. A lane is not required to be
+  complete to be in the train, but it **is** required to be honest about what it contains: a
+  partial lane states its scope in its README rather than shipping stubs.

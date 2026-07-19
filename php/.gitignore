@@ -1,0 +1,8 @@
+/vendor/
+/.phpunit.cache/
+/.phpunit.result.cache
+
+# Not committed, deliberately: this is a library, not an application. Composer's
+# guidance is that libraries let consumers resolve their own dependency
+# versions, so a lock here would pin nothing for them and only go stale.
+/composer.lock

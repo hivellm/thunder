@@ -93,7 +93,10 @@ tolerated legacy forms are decode-only, forever within 1.x.
   buffers only.
 - **WIRE-031** [P0] Serialization libraries are fixed per language (analysis T-011): Rust
   `rmp-serde` 1.x · TypeScript `@msgpack/msgpack` ^3 · Python `msgpack` ≥1.1
-  (`use_bin_type=True`) · C# `MessagePack` 2.5.x via low-level `MessagePackWriter`/`Reader`.
+  (`use_bin_type=True`) · C# `MessagePack` 2.5.x via low-level `MessagePackWriter`/`Reader` ·
+  Go `vmihailenco/msgpack` v5 with `UseCompactInts(true)` · PHP `rybakit/msgpack` ^0.9 driven at
+  the low level (`packArrayHeader`/`packMapHeader`/`packBin`, never the generic `pack()` for
+  values, which cannot distinguish `Bytes` from `Str`).
   `MessagePackSerializer.Typeless` and hand-rolled MessagePack codecs are **forbidden** (PRD NFR-02).
 
 ## 5. Error string conventions (v1)

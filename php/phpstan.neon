@@ -1,0 +1,10 @@
+parameters:
+    # Level 9 is the strictest level that does not demand a fully typed
+    # `mixed`-free codebase. The wire layer is where a silent type slip becomes
+    # a wrong byte on a socket that five other languages have to agree with, so
+    # the static check earns its keep here more than almost anywhere.
+    level: 9
+    paths:
+        - src
+        - tests
+    treatPhpDocTypesAsCertain: false

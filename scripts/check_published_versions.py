@@ -26,9 +26,9 @@ So there are two modes:
   The repo being ahead of all of them is normal and passes. One registry
   behind the others is the failure this exists to catch.
 
-Go is checked separately: it publishes from a VCS tag with no registry to
-query, and since it became a submodule its tag lives in another repository —
-so it is reported, never silently skipped.
+Go and PHP are checked separately: both publish from a VCS tag with no registry
+to query, and both live in their own repository — so each is reported, never
+silently skipped.
 
 Usage:
     check_published_versions.py drift
@@ -124,32 +124,37 @@ def repo_version() -> str:
     return match.group(1)
 
 
-def go_tag_state(expected: str | None) -> str:
-    """Report the Go lane, which has no registry to query.
+#: Lanes that resolve from a VCS tag instead of a registry API. Both live in
+#: their own repository, so each is a place the train can silently fall out of
+#: step — reported rather than skipped.
+TAG_LANES = {
+    "Go": ("thunder-go", "https://github.com/hivellm/thunder-go", "`go get` resolves no release"),
+    "PHP": ("thunder-php", "https://github.com/hivellm/thunder-php", "Composer resolves no release"),
+}
 
-    Go resolves from a VCS tag, and since `go/` became a submodule that tag
-    lives in another repository — a second place the train can silently fall
-    out of step. Reported rather than skipped.
-    """
+
+def tag_lane_state(lane: str, expected: str | None) -> str:
+    """Report a VCS-tag lane, which has no registry to query."""
+    repo, url, consequence = TAG_LANES[lane]
     try:
         tags = subprocess.run(
-            ["git", "ls-remote", "--tags", "https://github.com/hivellm/thunder-go"],
+            ["git", "ls-remote", "--tags", url],
             capture_output=True,
             text=True,
             timeout=TIMEOUT,
             check=False,
         )
     except (subprocess.SubprocessError, OSError) as exc:
-        return f"Go: could not list tags ({exc})"
+        return f"{lane}: could not list tags ({exc})"
     if tags.returncode != 0:
-        return f"Go: could not list tags (git exit {tags.returncode})"
+        return f"{lane}: could not list tags (git exit {tags.returncode})"
     names = re.findall(r"refs/tags/(v[^\s^]+)$", tags.stdout, re.MULTILINE)
     if not names:
-        return "Go: thunder-go has no version tag yet — `go get` resolves no release"
+        return f"{lane}: {repo} has no version tag yet — {consequence}"
     latest = max(names, key=_version_key)
     if expected and latest.lstrip("v") != expected:
-        return f"Go: thunder-go latest tag is {latest}, expected v{expected}"
-    return f"Go: thunder-go latest tag is {latest}"
+        return f"{lane}: {repo} latest tag is {latest}, expected v{expected}"
+    return f"{lane}: {repo} latest tag is {latest}"
 
 
 def collect() -> tuple[dict[str, str], list[str]]:
@@ -211,7 +216,8 @@ def main(argv: list[str]) -> int:
     for name, version in sorted(published.items()):
         print(f"  {name:<10} {version}")
     print(f"  {'repo':<10} {repo_version()}")
-    print(f"  {go_tag_state(expected)}")
+    for lane in TAG_LANES:
+        print(f"  {tag_lane_state(lane, expected)}")
 
     if errors:
         # A registry we could not reach is not a lagging registry. Fail — a

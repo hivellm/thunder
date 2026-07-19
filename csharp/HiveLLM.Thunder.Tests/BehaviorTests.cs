@@ -395,6 +395,9 @@ public class BehaviorTests
     /// </summary>
     private const string BlackholeAddress = "192.0.2.1:9";
 
+    /// <summary>Slack for the connect-timeout assertion — see its use below.</summary>
+    private const int ConnectTimeoutSlackMs = 20;
+
     [Fact]
     public async Task Connect_timeout_fires_as_typed_timeout()
     {
@@ -404,9 +407,14 @@ public class BehaviorTests
         // connection error, and not a hang.
         await Assert.ThrowsAsync<ThunderTimeoutException>(
             () => ThunderClient.ConnectAsync(BlackholeAddress, PlainConfig(), config));
+        // One timer tick of slack. No platform guarantees a 150 ms timer
+        // measures as >= 150 ms, and the assertion is here to catch a dial
+        // failing *instantly* (that is the ConnectionError class, which this
+        // test distinguishes) — a tick of slack keeps that meaning while
+        // surviving a coarse timer. The TypeScript twin flaked at 149 vs 150.
         Assert.True(
-            started.Elapsed >= TimeSpan.FromMilliseconds(150),
-            "the dial must be given the full connect timeout before failing");
+            started.Elapsed >= TimeSpan.FromMilliseconds(150 - ConnectTimeoutSlackMs),
+            $"the dial must be given the full connect timeout before failing, but returned after {started.ElapsedMilliseconds}ms");
     }
 
     [Fact]

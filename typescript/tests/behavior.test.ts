@@ -402,8 +402,23 @@ test("a handshake rejection is a typed auth error (CLT-003)", async () => {
  */
 const BLACKHOLE_ADDR = "192.0.2.1:9";
 
+/**
+ * Timers are not required to be late, only not-early-by-much, and no platform
+ * guarantees a 150 ms timer measures as >= 150 ms: `setTimeout` may fire a
+ * tick early and the clock rounds to whole milliseconds. This assertion is
+ * here to catch a dial failing *instantly* (an instant failure is the
+ * ConnectionError class, which is what this test distinguishes), and one timer
+ * tick of slack keeps that meaning while surviving a coarse clock.
+ *
+ * CI proved the point at 149 vs 150 — a one-millisecond flake.
+ */
+const CONNECT_TIMEOUT_SLACK_MS = 20;
+
 test("the connect timeout fires as a typed timeout (CLT-001)", async () => {
-  const started = Date.now();
+  // `performance.now()` and not `Date.now()`: monotonic, so an NTP adjustment
+  // mid-test cannot make the elapsed time jump or go backwards. The other
+  // languages all measure this with their monotonic clock.
+  const started = performance.now();
   const connecting = Client.connect(BLACKHOLE_ADDR, plainConfig(), {
     connectTimeoutMs: 150,
   });
@@ -411,9 +426,9 @@ test("the connect timeout fires as a typed timeout (CLT-001)", async () => {
   // error, and not a hang.
   await expect(connecting).rejects.toBeInstanceOf(TimeoutError);
   expect(
-    Date.now() - started,
+    performance.now() - started,
     "the dial must be given the full connect timeout before failing",
-  ).toBeGreaterThanOrEqual(150);
+  ).toBeGreaterThanOrEqual(150 - CONNECT_TIMEOUT_SLACK_MS);
 });
 
 test("the per-call timeout fires and the late response is dropped", async () => {

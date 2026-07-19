@@ -442,6 +442,9 @@ async fn handshake_rejection_is_a_typed_auth_error() {
 /// this one.
 const BLACKHOLE_ADDR: &str = "192.0.2.1:9";
 
+/// Slack for the connect-timeout assertion — see its use below.
+const CONNECT_TIMEOUT_SLACK_MS: u64 = 20;
+
 #[tokio::test]
 async fn connect_timeout_fires_as_typed_timeout() {
     let config = ClientConfig::new().connect_timeout(Duration::from_millis(150));
@@ -455,9 +458,17 @@ async fn connect_timeout_fires_as_typed_timeout() {
         matches!(err, ClientError::Timeout),
         "expected the timeout class from an unroutable dial, got {err:?}"
     );
+    // One timer tick of slack. No platform guarantees a 150 ms timer measures
+    // as >= 150 ms, and what this assertion is really for is catching a dial
+    // that failed *instantly* — an instant failure is the ConnectionError
+    // class, which is what this test distinguishes. The slack keeps that
+    // meaning while surviving a coarse timer; the TypeScript twin flaked in CI
+    // at 149 vs 150.
     assert!(
-        started.elapsed() >= Duration::from_millis(150),
-        "the dial must be given the full connect timeout before failing"
+        started.elapsed() >= Duration::from_millis(150 - CONNECT_TIMEOUT_SLACK_MS),
+        "the dial must be given the full connect timeout before failing, but \
+         returned after {:?}",
+        started.elapsed()
     );
 }
 
